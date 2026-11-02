@@ -1,88 +1,83 @@
 # Performance Comparison of Sequential, OpenMP, and CUDA-Based 2D Convolution
 
-ECE 759, Fall 2026 — Final Project
+ECE 759 · Fall 2026 · Final Project
 
-Team: Srimathi Ravisankar, Kshitija Sunil Rangrej, Vanessa Bennett, Frey Wysong
+**Team:** Srimathi Ravisankar, Kshitija Sunil Rangrej, Vanessa Bennett, Frey Wysong
 
 ## Overview
 
-We implement the same 2D convolution three ways — a sequential C++ baseline,
-an OpenMP multicore version, and a CUDA GPU version — and compare their
-performance across image sizes (256² to 2048²) and filter sizes (3×3, 5×5, 7×7).
-We also study OpenMP thread count / scheduling and CUDA thread-block shape.
+One 2D convolution, implemented three ways (sequential C++, OpenMP, CUDA)
+and benchmarked across image sizes 256²–2048² and filter sizes 3×3, 5×5, 7×7.
+We also study OpenMP thread count and scheduling, and CUDA thread-block shape.
 
-## Operation specification
+## Specification
 
-All implementations must compute exactly this operation so results are
-directly comparable.
+Every implementation computes, with `R = K / 2`:
 
-| Item | Decision |
+```
+out[r][c] = Σᵢ Σⱼ k[i][j] · in[r+i−R][c+j−R]
+```
+
+| | |
 |---|---|
-| Operation | 2D cross-correlation (the filter is **not** flipped). This is what image-processing and CNN libraries call "convolution". |
-| Data type | FP32 (`float`) for image, filter, and output |
-| Layout | Row-major, contiguous. Pixel `(r, c)` is at `in[r * W + c]` |
-| Filter size | Square, odd `K` (3, 5, 7). Center at `(K/2, K/2)` |
-| Boundary | Zero padding; output has the same size as the input (`H × W`) |
-| Accumulation | Single-precision accumulator, loop order `i` (filter row) then `j` (filter column) |
+| Operation | Cross-correlation (filter not flipped), as in image-processing and CNN libraries |
+| Precision | FP32 input, filter, output, and accumulator |
+| Layout | Row-major; pixel `(r, c)` at `in[r*W + c]` |
+| Filter | Square, odd `K` ∈ {3, 5, 7}, centered |
+| Boundary | Zero padding; output is `H × W` |
+| Sum order | Filter row `i`, then column `j` |
 
-Formally, with `R = K / 2`:
-
-```
-out[r][c] = sum_{i=0}^{K-1} sum_{j=0}^{K-1} k[i][j] * in[r + i - R][c + j - R]
-```
-
-where any `in[y][x]` with `y` or `x` outside the image is treated as 0.
-
-### Common interface
-
-Every implementation exposes the same signature (see `include/conv2d.h`):
+Shared interface (`include/conv2d.h`):
 
 ```cpp
 void conv2d_<variant>(const float* in, float* out, const float* k,
                       int H, int W, int K);
 ```
 
-### Inputs
+## Methodology
 
-Image and filter values are generated from a fixed seed (uniform in [-1, 1])
-so runs are reproducible. Inputs can also be written to / read from raw
-binary files for cross-checking with Python.
+**Inputs.** Uniform in [−1, 1] from fixed seeds. Exportable as raw float32 for
+Python cross-checks.
 
-### Correctness
+**Correctness.** Parallel outputs are checked against the sequential version,
+which is checked against `scipy.signal.correlate2d(in, k, mode="same", boundary="fill")`.
+Pass: max absolute error ≤ 1e-4 and max relative error ≤ 1e-5 (on entries
+with |ref| > 1e-3). GPU results need not match bit-for-bit (FMA, summation order).
 
-Each parallel output is compared against the sequential output, and the
-sequential output is compared against a NumPy/SciPy reference
-(`scipy.signal.correlate2d(in, k, mode="same", boundary="fill")`).
-A result passes if the maximum absolute error is at most `1e-4` and the
-maximum relative error (on entries with magnitude > 1e-3) is at most `1e-5`.
-GPU results are not expected to match bit-for-bit because of FMA contraction
-and different operation order.
+**Timing.** Warm-up runs, then the median of N timed runs.
 
-### Timing methodology
+- CPU: `std::chrono::steady_clock`
+- CUDA: `cudaEvent` for kernel-only time; end-to-end time adds host↔device copies
 
-- Wall-clock CPU timing uses `std::chrono::steady_clock`.
-- CUDA kernel time uses `cudaEvent` pairs; end-to-end CUDA time also includes
-  host-to-device and device-to-host copies.
-- Each configuration runs a few warm-up iterations, then reports the median
-  of N timed iterations.
-- All reported numbers come from the same cluster node. Laptop timings are
-  only for development.
+All reported numbers come from one cluster node. Laptop timings are for
+development only.
 
-## Repository layout
+## Layout
 
 ```
-include/      shared headers (interface, timing, I/O helpers)
-src/          implementations and the benchmark driver
-validation/   Python reference and correctness checks
-scripts/      benchmark sweeps and Slurm job scripts
-results/      raw benchmark output (CSV) and hardware info
-plots/        generated figures
+include/      interface, timing, and I/O helpers
+src/          implementations and benchmark driver
+validation/   Python reference checks
+scripts/      benchmark sweeps and Slurm jobs
+results/      raw CSV output and hardware info
+plots/        figures
 report/       final report
 ```
 
-## Building
+## Build and run
 
 ```
-make            # sequential + OpenMP driver (bin/conv)
-make cuda       # CUDA driver (requires nvcc)
+make                                         # builds bin/conv
+./bin/conv --impl seq --size 1024 --K 5 --header
 ```
+
+Options: `--size N` (or `--H`, `--W`), `--K`, `--iters`, `--warmup`,
+`--check`, `--dump DIR`, `--header`. Output is one CSV row per run.
+
+## Status
+
+- [x] Sequential baseline
+- [ ] OpenMP
+- [ ] CUDA
+- [ ] Benchmarks and plots
+- [ ] Report
