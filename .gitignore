@@ -1,0 +1,18 @@
+# build output
+bin/
+build/
+*.o
+
+# generated data
+data/
+*.bin
+
+# python
+__pycache__/
+.ipynb_checkpoints/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
