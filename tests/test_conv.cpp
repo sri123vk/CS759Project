@@ -9,7 +9,7 @@
 // Every test runs on every implementation compiled in (see all_impls()):
 //   seq                           always
 //   omp/<schedule>/t<threads>     when built with -DCONV_HAVE_OMP
-//   cuda                          when built with -DCONV_HAVE_CUDA
+//   cuda/<bx>x<by>                when built with -DCONV_HAVE_CUDA
 //
 // Exit status: 0 if every check passes, 1 if any fails, 2 on bad usage.
 
@@ -32,7 +32,7 @@
 
 namespace {
 
-using ConvFn = void (*)(const float*, float*, const float*, int, int, int);
+using ConvFn = std::function<void(const float*, float*, const float*, int, int, int)>;
 using Image = std::vector<float>;
 
 const float kNaN = std::numeric_limits<float>::quiet_NaN();
@@ -79,8 +79,22 @@ std::vector<Impl> all_impls() {
     }
 #endif
 #ifdef CONV_HAVE_CUDA
-    // FMA and a different evaluation order, so only the error bound applies.
-    v.push_back({"cuda", conv2d_cuda, [] {}, false});
+    // FMA changes the rounding, so only the error bound applies.
+    // cuda/32x8 is the one-call conv2d_cuda(); the rest go through the
+    // benchmark path (alloc / run / free) with the block shapes we sweep,
+    // plus 7x3, which leaves partial blocks along every edge.
+    v.push_back({"cuda/32x8", conv2d_cuda, [] {}, false});
+    const int blocks[][2] = {{8, 8}, {16, 16}, {32, 32}, {128, 1}, {1, 256}, {7, 3}};
+    for (const auto& b : blocks) {
+        const int bx = b[0], by = b[1];
+        v.push_back({fmt("cuda/%dx%d", bx, by),
+                     [bx, by](const float* in, float* out, const float* k, int H, int W, int K) {
+                         CudaConv c = cuda_conv_alloc(H, W, K);
+                         cuda_conv_run(c, in, out, k, bx, by);
+                         cuda_conv_free(c);
+                     },
+                     [] {}, false});
+    }
 #endif
     return v;
 }

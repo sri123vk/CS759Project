@@ -51,7 +51,11 @@ max absolute and relative error are reported for information only.
 **Timing.** Warm-up runs, then the median of N timed runs.
 
 - CPU: `std::chrono::steady_clock`
-- CUDA: `cudaEvent` for kernel-only time; end-to-end time adds host↔device copies
+- CUDA: the context is created and device memory allocated before timing
+  (allocation reported separately as `alloc_ms`). End-to-end time
+  (`median_ms`) is host wall-clock for host→device copy + kernel +
+  device→host copy. `h2d_ms`, `kernel_ms`, `d2h_ms` are per-stage
+  `cudaEvent` times (medians).
 
 All reported numbers come from one cluster node. Laptop timings are for
 development only.
@@ -74,10 +78,17 @@ report/       final report
 ```
 make                                         # builds bin/conv
 ./bin/conv --impl seq --size 1024 --K 5 --header
+./bin/conv --impl cuda --size 2048 --K 7 --block 16 16 --check
 ```
 
+CUDA is built in automatically when `nvcc` is on the PATH (`make CUDA=0`
+to skip it). To target a specific GPU, e.g. `make NVCCFLAGS="-O3 -std=c++17 -arch=sm_75"`.
+
 Options: `--size N` (or `--H`, `--W`), `--K`, `--iters`, `--warmup`,
-`--check`, `--dump DIR`, `--header`. Output is one CSV row per run.
+`--block BX BY` (CUDA thread block, default 32 8), `--check`, `--dump DIR`,
+`--header`. Output is one CSV row per run with columns
+`impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass`;
+CUDA-only columns are empty for CPU implementations.
 
 ## Tests
 
@@ -89,7 +100,7 @@ make test                          # build bin/test_conv and run every test
 
 Every test runs on every implementation that is built in: `seq` always,
 `omp/<static|dynamic>/t<threads>` once `src/conv2d_omp.cpp` exists, and
-`cuda` when compiled with `-DCONV_HAVE_CUDA`. Tests cover exact-answer cases
+`cuda/<bx>x<by>` for several block shapes when CUDA is built in. Tests cover exact-answer cases
 (identity, shifted single tap, impulse, all-ones), awkward shapes, random
 data against a double-precision reference using the same error bound as
 `--check`, out-of-bounds writes, unwritten pixels, and run-to-run
@@ -100,6 +111,6 @@ Exit status is 0 only if everything passes. Run it before every benchmark sweep.
 
 - [x] Sequential baseline
 - [ ] OpenMP
-- [ ] CUDA
+- [ ] CUDA 
 - [ ] Benchmarks and plots
 - [ ] Report
