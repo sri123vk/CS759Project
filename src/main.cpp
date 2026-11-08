@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -75,7 +76,9 @@ int main(int argc, char** argv) {
     ConvFn fn = pick(a.impl);
 
     const size_t n = (size_t)a.H * a.W;
-    std::vector<float> in(n), k((size_t)a.K * a.K), out(n);
+    // out starts as NaN so any pixel an implementation never writes fails --check.
+    std::vector<float> in(n), k((size_t)a.K * a.K),
+        out(n, std::numeric_limits<float>::quiet_NaN());
     fill_random(in, 759);
     fill_random(k, 42);
 
@@ -92,7 +95,7 @@ int main(int argc, char** argv) {
     if (a.check) {
         std::vector<float> ref(n);
         conv2d_seq(in.data(), ref.data(), k.data(), a.H, a.W, a.K);
-        err = compare(ref, out);
+        err = compare(ref, out, sum_abs_terms(in, k, a.H, a.W, a.K), a.K);
         pass = within_tol(err);
     }
 
@@ -106,10 +109,13 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (a.header) std::printf("impl,H,W,K,iters,median_ms,min_ms,max_abs_err,max_rel_err,pass\n");
-    std::printf("%s,%d,%d,%d,%d,%.4f,%.4f,%.3e,%.3e,%d\n",
+    if (a.header)
+        std::printf("impl,H,W,K,iters,median_ms,min_ms,"
+                    "max_abs_err,max_rel_err,err_ratio,nonfinite,pass\n");
+    std::printf("%s,%d,%d,%d,%d,%.4f,%.4f,%.3e,%.3e,%.3e,%zu,%d\n",
                 a.impl.c_str(), a.H, a.W, a.K, a.iters, median(times),
                 *std::min_element(times.begin(), times.end()),
-                err.max_abs, err.max_rel, pass ? 1 : 0);
+                err.max_abs, err.max_rel, err.max_ratio, err.nonfinite,
+                pass ? 1 : 0);
     return pass ? 0 : 2;
 }

@@ -41,8 +41,12 @@ Python cross-checks.
 
 **Correctness.** Parallel outputs are checked against the sequential version,
 which is checked against `scipy.signal.correlate2d(in, k, mode="same", boundary="fill")`.
-Pass: max absolute error ≤ 1e-4 and max relative error ≤ 1e-5 (on entries
-with |ref| > 1e-3). GPU results need not match bit-for-bit (FMA, summation order).
+Pass: no NaN/Inf in the output, and at every pixel
+`|got − ref| ≤ 2·γ(K²)·Σ|k·in|` where `γ(n) = n·u / (1 − n·u)`, `u = 2⁻²⁴`.
+This is the standard FP32 dot-product error bound (Higham §3.1). It holds
+for any summation order, with or without FMA, so GPU results need not match
+bit-for-bit. The CSV reports `err_ratio` (worst error ÷ bound, pass ≤ 1);
+max absolute and relative error are reported for information only.
 
 **Timing.** Warm-up runs, then the median of N timed runs.
 
