@@ -13,3 +13,14 @@ void conv2d_seq(const float* in, float* out, const float* k,
 // uses schedule(runtime).
 void conv2d_omp(const float* in, float* out, const float* k,
                 int H, int W, int K);
+
+//optimized version for the large size matrices
+//image rectangle shape handled
+//zero-padding,kernel square matrix with odd size
+const float *image,
+    float *output,
+    std::size_t height,
+    std::size_t width,
+    const float *mask,
+    std::size_t m
+);
