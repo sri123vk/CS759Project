@@ -61,6 +61,7 @@ development only.
 ```
 include/      interface, timing, and I/O helpers
 src/          implementations and benchmark driver
+tests/        C++ correctness tests (make test)
 validation/   Python reference checks
 scripts/      benchmark sweeps and Slurm jobs
 results/      raw CSV output and hardware info
@@ -77,6 +78,23 @@ make                                         # builds bin/conv
 
 Options: `--size N` (or `--H`, `--W`), `--K`, `--iters`, `--warmup`,
 `--check`, `--dump DIR`, `--header`. Output is one CSV row per run.
+
+## Tests
+
+```
+make test                          # build bin/test_conv and run every test
+./bin/test_conv --list             # implementations being tested
+./bin/test_conv --impl omp -v      # only names containing "omp", show passes
+```
+
+Every test runs on every implementation that is built in: `seq` always,
+`omp/<static|dynamic>/t<threads>` once `src/conv2d_omp.cpp` exists, and
+`cuda` when compiled with `-DCONV_HAVE_CUDA`. Tests cover exact-answer cases
+(identity, shifted single tap, impulse, all-ones), awkward shapes, random
+data against a double-precision reference using the same error bound as
+`--check`, out-of-bounds writes, unwritten pixels, and run-to-run
+repeatability. OpenMP results must be bit-identical to `seq`.
+Exit status is 0 only if everything passes. Run it before every benchmark sweep.
 
 ## Status
 

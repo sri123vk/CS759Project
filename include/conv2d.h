@@ -13,3 +13,8 @@ void conv2d_seq(const float* in, float* out, const float* k,
 // uses schedule(runtime).
 void conv2d_omp(const float* in, float* out, const float* k,
                 int H, int W, int K);
+
+// CUDA version (src/conv2d_cuda.cu). Takes and returns host pointers;
+// device allocation and copies happen inside.
+void conv2d_cuda(const float* in, float* out, const float* k,
+                 int H, int W, int K);
