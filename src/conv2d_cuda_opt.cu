@@ -7,7 +7,8 @@
 #include <string>
 
 #include "conv2d.h"
-
+#define BLOCK_x 32
+#define BLOCK_y 8 //incur launch and scheduling/resource overhead , if you dont configure it runtime/ based on matrix size
 namespace {
 
 // Report CUDA errors instead of continuing with invalid results.
@@ -145,7 +146,7 @@ void conv2d_cuda(
         checkCuda(cudaMemcpy(d_mask, mask, mask_bytes, cudaMemcpyHostToDevice),"copy mask to GPU");
 
         // Configure and launch the GPU kernel.
-        const dim3 block(32, 8);
+        const dim3 block(BLOCK_x, BLOCK_y);
 
         const dim3 grid((w + block.x - 1) / block.x,(h + block.y - 1) / block.y);
 
