@@ -213,6 +213,39 @@ status: 0 if all pass, 1 if any fail, 2 for missing or malformed files.
 - **No CI.** `make test` only runs when someone runs it, and with the default
   `VALIDATE=auto` it skips the external check on machines without SciPy.
 
+## Benchmarks
+
+The scripts in `scripts/` run the experiments for the report by calling
+`bin/conv` across a set of configurations. They don't change any
+implementation code. For more detail, see [BENCHMARK.md](BENCHMARK.md).
+
+```
+make && make test                        # benchmark only code that passes its tests
+scripts/bench.sh --quick                 # ~10 s smoke run of every experiment
+scripts/bench.sh -o results/final all    # full sweep -> results/final/*.csv
+python3 scripts/plot.py results/final    # -> plots/final/*.png + summary.md
+sbatch scripts/euler.slurm               # build, test, sweep and plot on one cluster node
+```
+
+What is benchmarked:
+
+| Experiment | Configurations | Measures |
+|---|---|---|
+| `baseline` | every implementation × 256², 512², 1024², 2048² × K = 3, 5, 7 | time per call, speedup over `seq`, CUDA kernel-only vs end-to-end and the time spent in each stage |
+| `omp` | OpenMP × 1, 2, 4, … cores threads × `static` / `dynamic` / `guided` | thread scaling and scheduling policy |
+| `cuda_blocks` | CUDA × 13 thread-block shapes (e.g. 32×8, 16×16, 1×128) | effect of block shape and memory coalescing |
+| `torch` | PyTorch `conv2d` (cuDNN on the GPU, oneDNN on the CPU), same problems as `baseline` | an external reference point |
+
+Every run except `seq` is checked against `seq` with `--check`, and failures
+are logged to `errors.log`. Each results directory gets a `sysinfo.txt` with
+the hardware, compiler flags and git commit. Sweep parameters
+(implementations, sizes, filter sizes, threads, block shapes, iteration
+counts) can be overridden with environment variables. See
+`scripts/bench.sh --help`.
+
+The plots need Python 3 with pandas and matplotlib. The `torch` experiment
+needs PyTorch and is skipped if it isn't installed.
+
 ## Status
 
 - [x] Sequential baseline
