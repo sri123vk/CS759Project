@@ -1,4 +1,4 @@
-// Sequential parallelized: 2D convolution using openMP, one output pixel at a time.
+// Naive openMP parallelized: 2D convolution using openMP, one output pixel at a time.
 // This is a direct parallelization of the sequential implementation, with the outer loop parallelized.
 
 
@@ -6,11 +6,22 @@
 #include <omp.h>
 #include <algorithm>
 
-
-void conv2d_seq(const float* in, float* out, const float* k,
+/**
+ * Implementation of a 2d convolution using a single 
+ * omp parallel for directive.
+ * Inputs:
+ *  in: input image of size H x W
+ *  out: output image of size H x W
+ *  k: kernel of size K x K
+ *  H: height of the input image
+ *  W: width of the input image
+ *  K: size of the kernel (assumed to be odd)
+ */
+void conv2d_omp(const float* in, float* out, const float* k,
                 int H, int W, int K) {
     const int R = K / 2;
 
+    // A "crazy" parallelization
     #pragma omp parallel for
     for (int r = 0; r < H; ++r) {
         // Filter rows that land inside the image for this output row.
