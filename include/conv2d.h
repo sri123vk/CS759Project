@@ -5,6 +5,8 @@
 // All arrays are row-major FP32. K must be odd.
 #pragma once
 
+#include <cstddef>  // std::size_t, used by convolve()
+
 void conv2d_seq(const float* in, float* out, const float* k,
                 int H, int W, int K);
 

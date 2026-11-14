@@ -25,7 +25,22 @@ ifeq ($(CUDA),1)
   CUDA_LIBS   := -L$(CUDA_LIBDIR) -Wl,-rpath,$(CUDA_LIBDIR) -lcudart
 endif
 
-.PHONY: all test clean
+# External check (make validate): bin/conv dumps its output for each shape
+# and implementation, then validation/validate.py compares every output with
+# SciPy (or PyTorch). Shapes are HxWxK. Implementations default to seq, plus
+# cuda when it is built in.
+#
+# `make test` runs it after the unit tests. VALIDATE=auto (default) runs it
+# if $(PYTHON) has numpy and scipy (or torch) and otherwise prints SKIPPED;
+# VALIDATE=1 runs it regardless, so a missing library fails the build;
+# VALIDATE=0 skips it.
+VALIDATE        ?= auto
+PYTHON          ?= python3
+VALIDATE_DIR    ?= data/validate
+VALIDATE_SHAPES ?= 2048x2048x3 2048x2048x5 2048x2048x7 1531x2777x7
+VALIDATE_IMPLS  ?= seq $(if $(filter 1,$(CUDA)),cuda)
+
+.PHONY: all test validate clean
 
 all: $(BIN)/conv
 
@@ -40,6 +55,33 @@ $(BIN)/conv2d_cuda.o: src/conv2d_cuda.cu include/conv2d.h | $(BIN)
 
 test: $(BIN)/test_conv
 	./$(BIN)/test_conv
+ifeq ($(VALIDATE),0)
+	@echo "external check skipped (VALIDATE=0)"
+else
+	@if [ "$(VALIDATE)" = 1 ] || $(PYTHON) -c "import numpy, scipy" 2>/dev/null \
+	    || $(PYTHON) -c "import numpy, torch" 2>/dev/null; then \
+	  echo; echo "== external check (make validate)"; \
+	  $(MAKE) --no-print-directory validate; \
+	else \
+	  echo; \
+	  echo "*** SKIPPED: external check against SciPy (make validate)."; \
+	  echo "*** '$(PYTHON)' is missing, or has neither numpy+scipy nor numpy+torch."; \
+	  echo "*** Install them, or use VALIDATE=1 to make this an error."; \
+	fi
+endif
+
+validate: $(BIN)/conv
+	mkdir -p $(VALIDATE_DIR)
+	rm -f $(VALIDATE_DIR)/*.bin
+	@set -e; for s in $(VALIDATE_SHAPES); do \
+	  H=$${s%%x*}; rest=$${s#*x}; W=$${rest%%x*}; K=$${rest#*x}; \
+	  for impl in $(VALIDATE_IMPLS); do \
+	    echo "  $$impl $${H}x$${W} K=$$K"; \
+	    ./$(BIN)/conv --impl $$impl --H $$H --W $$W --K $$K \
+	      --iters 1 --warmup 0 --dump $(VALIDATE_DIR) > /dev/null; \
+	  done; \
+	done
+	$(PYTHON) validation/validate.py $(VALIDATE_DIR)
 
 $(BIN):
 	mkdir -p $(BIN)
