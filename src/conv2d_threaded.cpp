@@ -35,7 +35,10 @@ void conv2d_threaded(const float* in, float* out, const float* k,
     //S.W.A.G: Each thread should have at least 1000 pixels to process; cap threads at 8.
     int num_threads = std::min(8, std::max(1, (H * W) / 1000));
 
-    if (num_threads == 1) conv2d_seq(in, out, k, H, W, K);
+    if (num_threads == 1) {
+        conv2d_seq(in, out, k, H, W, K);
+        return;
+    }
 
     std::vector<std::thread> threads;
 
