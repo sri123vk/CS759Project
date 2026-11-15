@@ -22,7 +22,7 @@ void conv2d_omp(const float* in, float* out, const float* k,
     const int R = K / 2;
 
     // A "crazy" parallelization
-    #pragma omp parallel for
+    #pragma omp parallel for schedule(runtime)
     for (int r = 0; r < H; ++r) {
         // Filter rows that land inside the image for this output row.
         // Clipping the loop bounds is equivalent to zero padding but keeps

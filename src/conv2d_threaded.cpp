@@ -32,7 +32,7 @@ void conv2d_threaded(const float* in, float* out, const float* k,
     const int R = K / 2;
 
     //Decide on the number of threads to use based on the size of the image and kernel
-    //S.W.A.G: Each thread should have at least 1000 pixels to process, and we should use at most 8 threads.
+    //S.W.A.G: Each thread should have at least 1000 pixels to process; cap threads at 8.
     int num_threads = std::min(8, std::max(1, (H * W) / 1000));
 
     if (num_threads == 1) conv2d_seq(in, out, k, H, W, K);
@@ -44,6 +44,8 @@ void conv2d_threaded(const float* in, float* out, const float* k,
         int start_row = t * H / num_threads;
         int end_row = (t + 1) * H / num_threads;
 
+        //Copilot autocomplete used to create lambda function.
+        //Implementation based off of conv2d_seq
         //Create a thread for each chunk
         threads.emplace_back([=]() {
             for (int r = start_row; r < end_row; ++r) {
