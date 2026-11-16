@@ -1,0 +1,20 @@
+Run 1
+impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass
+cuda,1024,1024,3,32,8,50,0.4356,0.4246,0.1973,0.0236,0.2080,0.4041,0.000e+00,0.000e+00,0.000e+00,0,1
+impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass
+cuda_opt,1024,1024,3,32,8,50,0.4578,0.4491,0.1935,0.0276,0.2296,0.4267,0.000e+00,0.000e+00,0.000e+00,0,1
+Run 2
+impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass
+cuda_opt,1024,1024,3,32,8,50,0.4342,0.4247,0.1929,0.0276,0.2069,0.3870,0.000e+00,0.000e+00,0.000e+00,0,1
+impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass
+cuda,1024,1024,3,32,8,50,0.4493,0.4365,0.1982,0.0236,0.2205,0.3922,0.000e+00,0.000e+00,0.000e+00,0,1
+Run 3
+impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass
+cuda,1024,1024,3,32,8,50,0.4727,0.4582,0.1987,0.0236,0.2428,0.3941,0.000e+00,0.000e+00,0.000e+00,0,1
+impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass
+cuda_opt,1024,1024,3,32,8,50,0.4893,0.4773,0.1989,0.0276,0.2527,0.3838,0.000e+00,0.000e+00,0.000e+00,0,1
+Run 4
+impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass
+cuda_opt,1024,1024,3,32,8,50,0.4450,0.4352,0.1983,0.0276,0.2124,0.4047,0.000e+00,0.000e+00,0.000e+00,0,1
+impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass
+cuda,1024,1024,3,32,8,50,0.4432,0.4336,0.1975,0.0236,0.2159,0.4010,0.000e+00,0.000e+00,0.000e+00,0,1

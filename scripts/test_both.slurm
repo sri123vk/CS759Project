@@ -59,3 +59,10 @@ python -c "import sys, numpy, scipy.signal; print('Using Python:', sys.executabl
 # Compare both CUDA outputs against the external reference.
 echo "Running external validation"
 python validation/validate.py "$dump_dir" -v
+
+
+# ------------------------------------------------------------
+# Benchmark the sequential and CUDA implementations.
+# ------------------------------------------------------------
+srun bash scripts/bench.sh -o "results/bench_${SLURM_JOB_ID}"
+
