@@ -79,3 +79,8 @@ CudaConv cuda_conv_alloc(int H, int W, int K);
 void cuda_conv_free(CudaConv& c);
 CudaTimes cuda_conv_run(const CudaConv& c, const float* in, float* out,
                         const float* k, int bx, int by);
+
+// Check whether a block and its grid fit the GPU's launch limits.
+bool cuda_block_supported(int H, int W, int bx, int by);
+CudaTimes cuda_conv_run_opt(const CudaConv& c, const float* in, float* out,
+                            const float* k, int bx, int by);
