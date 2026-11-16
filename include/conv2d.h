@@ -34,9 +34,9 @@ void conv2d_omp_blocked(const float* in, float* out, const float* k,
 void convolve(
     const float *image,
     float *output,
+    const float *mask,
     std::size_t height,
     std::size_t width,
-    const float *mask,
     std::size_t m
 );
 // ---------------------------------------------------------------------------
@@ -48,6 +48,15 @@ void convolve(
 void conv2d_cuda(const float* in, float* out, const float* k,
                  int H, int W, int K);
 
+
+void conv2d_cuda_opt(
+    const float *image,
+    float *output,
+    const float *mask,
+    int H,
+    int W,
+    int K
+);
 // Lower-level pieces for benchmarking: allocation happens once, outside the
 // timed loop, and each stage of a run is timed on the GPU with cudaEvents.
 struct CudaConv {

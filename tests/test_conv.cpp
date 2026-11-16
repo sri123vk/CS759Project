@@ -125,6 +125,16 @@ std::vector<Impl> all_impls() {
                      [] {}, false});
     }
 #endif
+
+#ifdef CONV_HAVE_CUDA_OPT
+    v.push_back({
+        "cuda_opt/32x8",
+        conv2d_cuda_opt,
+        [] {},
+        false
+    });
+#endif
+
     return v;
 }
 
