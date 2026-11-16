@@ -16,6 +16,15 @@ void conv2d_seq(const float* in, float* out, const float* k,
 void conv2d_omp(const float* in, float* out, const float* k,
                 int H, int W, int K);
 
+void conv2d_omp_blocked(const float* in, float* out, const float* k,
+                int H, int W, int K);
+
+void conv2d_omp_simd(const float* in, float* out, const float* k,
+                int H, int W, int K);
+
+void conv2d_omp_simd_blocked(const float* in, float* out, const float* k,
+                int H, int W, int K);
+
 //optimized version for the large size matrices
 //image rectangle shape handled
 //zero-padding,kernel square matrix with odd size

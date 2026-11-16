@@ -9,7 +9,7 @@ CPU_SRCS := src/main.cpp src/conv2d_seq.cpp
 TEST_SRCS := tests/test_conv.cpp src/conv2d_seq.cpp
 HEADERS := include/conv2d.h include/utils.h
 
-# The OpenMP version is built in (and tested) once its source file exists.
+# The OpenMP versions are built in (and tested).
 ifneq ($(wildcard src/conv2d_omp.cpp),)
   CPU_SRCS  += src/conv2d_omp.cpp
   TEST_SRCS += src/conv2d_omp.cpp
