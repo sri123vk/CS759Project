@@ -8,7 +8,7 @@
 
 #include "conv2d.h"
 #define BLOCK_x 32
-#define BLOCK_y 8 //incur launch and scheduling/resource overhead , if you dont configure it runtime/ based on matrix size
+#define BLOCK_y 8 // The existing one-call correctness-test wrapper uses 32x8.
 namespace {
 
 // Report CUDA errors instead of continuing with invalid results.
@@ -25,7 +25,7 @@ void checkCuda(cudaError_t status, const char *operation)
 
 
 // One GPU thread computes one output pixel.
-__global__ void conv2d_kernel(
+__global__ void conv2d_kernel_opt(
     const float *image,
     float *output,
     const float *mask,
@@ -84,8 +84,60 @@ __global__ void conv2d_kernel(
 }
 
 
+// Check launch dimensions once before timing. The kernel launch itself still
+// has a CUDA error check, which catches additional resource limitations.
+bool cuda_block_supported(int H, int W, int bx, int by) {
+    if (H <= 0 || W <= 0 || bx <= 0 || by <= 0) return false;
+
+    int device = 0;
+    cudaDeviceProp prop{};
+    checkCuda(cudaGetDevice(&device), "get CUDA device");
+    checkCuda(cudaGetDeviceProperties(&prop, device), "get CUDA device properties");
+
+    const auto threads = static_cast<std::uint64_t>(bx) * static_cast<std::uint64_t>(by);
+    const auto grid_x = (static_cast<std::uint64_t>(W) + bx - 1) / bx;
+    const auto grid_y = (static_cast<std::uint64_t>(H) + by - 1) / by;
+    return bx <= prop.maxThreadsDim[0] && by <= prop.maxThreadsDim[1] &&
+           threads <= static_cast<std::uint64_t>(prop.maxThreadsPerBlock) &&
+           grid_x <= static_cast<std::uint64_t>(prop.maxGridSize[0]) &&
+           grid_y <= static_cast<std::uint64_t>(prop.maxGridSize[1]);
+}
+
+// Use cuda_conv_alloc's buffers/events; caller validates dimensions once.
+CudaTimes cuda_conv_run_opt(const CudaConv& c, const float* in, float* out,
+                            const float* k, int bx, int by) {
+    if (c.H <= 0 || c.W <= 0 || c.K <= 0 || bx <= 0 || by <= 0) {
+        throw std::invalid_argument("Invalid image, filter, or block size");
+    }
+    const std::size_t image_bytes = static_cast<std::size_t>(c.H) * c.W * sizeof(float);
+    const std::size_t mask_bytes = static_cast<std::size_t>(c.K) * c.K * sizeof(float);
+    cudaEvent_t e[4];
+    for (int i = 0; i < 4; ++i) e[i] = (cudaEvent_t)c.events[i];
+
+    const dim3 block(bx, by);
+    const dim3 grid((static_cast<std::size_t>(c.W) + block.x - 1) / block.x,
+                    (static_cast<std::size_t>(c.H) + block.y - 1) / block.y);
+
+    checkCuda(cudaEventRecord(e[0]), "record H2D start");
+    checkCuda(cudaMemcpy(c.d_in, in, image_bytes, cudaMemcpyHostToDevice), "copy image to GPU");
+    checkCuda(cudaMemcpy(c.d_k, k, mask_bytes, cudaMemcpyHostToDevice), "copy filter to GPU");
+    checkCuda(cudaEventRecord(e[1]), "record H2D end");
+    conv2d_kernel_opt<<<grid, block>>>(c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
+    checkCuda(cudaGetLastError(), "launch optimized kernel");
+    checkCuda(cudaEventRecord(e[2]), "record kernel end");
+    checkCuda(cudaMemcpy(out, c.d_out, image_bytes, cudaMemcpyDeviceToHost), "copy output to CPU");
+    checkCuda(cudaEventRecord(e[3]), "record D2H end");
+    checkCuda(cudaEventSynchronize(e[3]), "synchronize");
+
+    CudaTimes times;
+    checkCuda(cudaEventElapsedTime(&times.h2d_ms, e[0], e[1]), "measure H2D");
+    checkCuda(cudaEventElapsedTime(&times.kernel_ms, e[1], e[2]), "measure kernel");
+    checkCuda(cudaEventElapsedTime(&times.d2h_ms, e[2], e[3]), "measure D2H");
+    return times;
+}
+
 // Host function. image, output, and mask point to CPU memory.
-void conv2d_cuda(
+void conv2d_cuda_opt(
     const float *image,
     float *output,
     const float *mask,
@@ -150,7 +202,7 @@ void conv2d_cuda(
 
         const dim3 grid((w + block.x - 1) / block.x,(h + block.y - 1) / block.y);
 
-        conv2d_kernel<<<grid, block>>>(d_image, d_output, d_mask, H, W, K);
+        conv2d_kernel_opt<<<grid, block>>>(d_image, d_output, d_mask, H, W, K);
 
         // Check for launch errors and execution errors.
         checkCuda(cudaGetLastError(), "launch kernel");

@@ -19,8 +19,8 @@ endif
 # The CUDA version is built in when nvcc is on the PATH; `make CUDA=0` skips it.
 CUDA ?= $(if $(shell command -v $(NVCC) 2>/dev/null),1,0)
 ifeq ($(CUDA),1)
-  CUDA_OBJ    := $(BIN)/conv2d_cuda.o
-  CUDAFLAGS   := -DCONV_HAVE_CUDA
+  CUDA_OBJ    := $(BIN)/conv2d_cuda.o $(BIN)/conv2d_cuda_opt.o
+  CUDAFLAGS   := -DCONV_HAVE_CUDA -DCONV_HAVE_CUDA_OPT
   CUDA_LIBDIR ?= $(abspath $(dir $(shell command -v $(NVCC)))../lib64)
   CUDA_LIBS   := -L$(CUDA_LIBDIR) -Wl,-rpath,$(CUDA_LIBDIR) -lcudart
 endif
@@ -53,6 +53,9 @@ $(BIN)/test_conv: $(TEST_SRCS) $(CUDA_OBJ) $(HEADERS) | $(BIN)
 $(BIN)/conv2d_cuda.o: src/conv2d_cuda.cu include/conv2d.h | $(BIN)
 	$(NVCC) $(CPPFLAGS) $(NVCCFLAGS) -c $< -o $@
 
+$(BIN)/conv2d_cuda_opt.o: src/conv2d_cuda_opt.cu include/conv2d.h | $(BIN)
+	$(NVCC) $(CPPFLAGS) $(NVCCFLAGS) -c $< -o $@
+	
 test: $(BIN)/test_conv
 	./$(BIN)/test_conv
 ifeq ($(VALIDATE),0)
