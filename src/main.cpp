@@ -140,7 +140,46 @@ Timings bench_cuda(const Args& a, const std::vector<float>& in,
     return t;
 }
 #endif
+#ifdef CONV_HAVE_CUDA_OPT
 
+// Run the optimized host function. It manages its own GPU buffers.
+Timings bench_cuda_opt(const Args& a,
+                       const std::vector<float>& in,
+                       std::vector<float>& out,
+                       const std::vector<float>& k) {
+    // Your current optimized kernel uses a fixed 32 x 8 block.
+    if (a.bx != 32 || a.by != 8) {
+        std::fprintf(
+            stderr,
+            "cuda_opt uses a fixed 32x8 block; --block must be 32 8\n"
+        );
+        std::exit(1);
+    }
+
+    Timings t;
+
+    // Warm-up calls.
+    for (int i = 0; i < a.warmup; ++i) {
+        conv2d_cuda_opt(
+            in.data(), out.data(), k.data(), a.H, a.W, a.K
+        );
+    }
+
+    // Timed calls.
+    t.call_ms.reserve(a.iters);
+
+    for (int i = 0; i < a.iters; ++i) {
+        t.call_ms.push_back(time_ms([&] {
+            conv2d_cuda_opt(
+                in.data(), out.data(), k.data(), a.H, a.W, a.K
+            );
+        }));
+    }
+
+    return t;
+}
+
+#endif
 // "%.4f", or an empty field for NaN.
 std::string field(double v) {
     if (std::isnan(v)) return "";
@@ -150,11 +189,10 @@ std::string field(double v) {
 }
 
 }  // namespace
-
 int main(int argc, char** argv) {
     Args a = parse(argc, argv);
-    const bool cuda = a.impl == "cuda";
-
+    const bool cuda = (a.impl == "cuda");
+    const bool cuda_opt = (a.impl == "cuda_opt");
     const size_t n = (size_t)a.H * a.W;
     // out starts as NaN so any pixel an implementation never writes fails --check.
     std::vector<float> in(n), k((size_t)a.K * a.K),
@@ -163,15 +201,27 @@ int main(int argc, char** argv) {
     fill_random(k, 42);
 
     Timings t;
+
     if (cuda) {
 #ifdef CONV_HAVE_CUDA
-        t = bench_cuda(a, in, out, k);
+    t = bench_cuda(a, in, out, k);
 #else
-        std::fprintf(stderr, "built without CUDA (nvcc not found when running make)\n");
-        return 1;
+    std::fprintf(
+        stderr,
+        "built without CUDA (nvcc not found when running make)\n"
+    );
+    return 1;
+#endif
+
+    } else if (cuda_opt) {
+#ifdef CONV_HAVE_CUDA_OPT
+    t = bench_cuda_opt(a, in, out, k);
+#else
+    std::fprintf(stderr, "built without optimized CUDA support\n");
+    return 1;
 #endif
     } else {
-        t = bench_cpu(a, in, out, k);
+    t = bench_cpu(a, in, out, k);
     }
 
     ErrStats err;
@@ -193,8 +243,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    const std::string bx = cuda ? std::to_string(a.bx) : "";
-    const std::string by = cuda ? std::to_string(a.by) : "";
+    const std::string bx = (cuda || cuda_opt) ? std::to_string(a.bx) : "";
+    const std::string by = (cuda || cuda_opt) ? std::to_string(a.by) : "";
     if (a.header)
         std::printf("impl,H,W,K,bx,by,iters,median_ms,min_ms,"
                     "h2d_ms,kernel_ms,d2h_ms,alloc_ms,"

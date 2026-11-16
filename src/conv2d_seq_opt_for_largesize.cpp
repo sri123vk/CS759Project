@@ -3,12 +3,14 @@
 
 #include "conv2d.h"
 
+//__global__ void conv2d_kernel(const float *in, float *out, const float *k,
+                            //  int H, int W, int K)
 void convolve(
     const float *image,
     float *output,
+    const float *mask,
     std::size_t height,
     std::size_t width,
-    const float *mask,
     std::size_t m
 ) {
     using signed_size_t = std::ptrdiff_t;

@@ -25,7 +25,7 @@ void checkCuda(cudaError_t status, const char *operation)
 
 
 // One GPU thread computes one output pixel.
-__global__ void conv2d_kernel(
+__global__ void conv2d_kernel_opt(
     const float *image,
     float *output,
     const float *mask,
@@ -85,7 +85,7 @@ __global__ void conv2d_kernel(
 
 
 // Host function. image, output, and mask point to CPU memory.
-void conv2d_cuda(
+void conv2d_cuda_opt(
     const float *image,
     float *output,
     const float *mask,
@@ -150,7 +150,7 @@ void conv2d_cuda(
 
         const dim3 grid((w + block.x - 1) / block.x,(h + block.y - 1) / block.y);
 
-        conv2d_kernel<<<grid, block>>>(d_image, d_output, d_mask, H, W, K);
+        conv2d_kernel_opt<<<grid, block>>>(d_image, d_output, d_mask, H, W, K);
 
         // Check for launch errors and execution errors.
         checkCuda(cudaGetLastError(), "launch kernel");
