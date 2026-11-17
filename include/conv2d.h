@@ -84,17 +84,3 @@ CudaTimes cuda_conv_run(const CudaConv& c, const float* in, float* out,
 bool cuda_block_supported(int H, int W, int bx, int by);
 CudaTimes cuda_conv_run_opt(const CudaConv& c, const float* in, float* out,
                             const float* k, int bx, int by);
-
-// Additional single-channel CUDA experiments. The existing `cuda` and
-// `cuda_opt` implementations remain independent and unchanged.
-enum class CudaVariant {
-    Constant,        // one output per thread, constant-memory filter
-    TiledConstant,   // shared-memory image tile, constant-memory filter
-    MultiOutput      // two outputs per thread, global-memory filter
-};
-
-// Uses the same reusable buffers, host pointers, and event timings as
-// cuda_conv_run. Constant-memory variants support odd K up to 63.
-CudaTimes cuda_conv_run_variant(const CudaConv& c, const float* in, float* out,
-                                const float* k, int bx, int by,
-                                CudaVariant variant);
