@@ -1,0 +1,1 @@
+implementations: seq cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout

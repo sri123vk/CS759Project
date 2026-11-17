@@ -1,0 +1,1 @@
+scripts/bench.sh: line 90: /srv/home/rangrej/CS759Project/scripts/sysinfo.sh: Permission denied

@@ -1,0 +1,195 @@
+Testing conv2d_cuda
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation         checks   failed
+cuda/32x8                 285        0
+
+ALL PASSED
+Testing conv2d_cuda_opt
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation         checks   failed
+cuda_opt/32x8             285        0
+
+ALL PASSED
+Generating cuda output
+cuda,33,65,3,32,8,1,0.9252,0.9252,0.0236,0.8714,0.0132,0.1618,0.000e+00,0.000e+00,0.000e+00,0,1
+Generating cuda_opt output
+cuda_opt,33,65,3,32,8,1,20.9289,20.9289,0.0238,0.0245,0.0128,0.1891,0.000e+00,0.000e+00,0.000e+00,0,1
+Using existing conv_validation environment
+Using Python: /srv/home/rangrej/.conda/envs/conv_validation/bin/python
+Running external validation
+reference: scipy 1.18.1 signal.correlate2d (float64), checked against known answers
+output                                    err_ratio    max_abs    max_rel nonfinite  result
+33x65_k3_cuda_opt_out.bin                 1.184e-01  3.994e-07  4.859e-05         0  ok
+                                         worst pixel (r=9, c=62): got -1.65719235, want -1.65719195
+33x65_k3_cuda_out.bin                     1.184e-01  3.994e-07  4.859e-05         0  ok
+                                         worst pixel (r=9, c=62): got -1.65719235, want -1.65719195
+
+2 of 2 passed
+Python: /srv/home/rangrej/.conda/envs/conv_torch312/bin/python
+PyTorch: 2.7.1
+CUDA available: True
+cuDNN available: True
+implementations: seq cuda cuda_opt
+results -> results/bench_121915
+== baseline
+  --impl seq --size 256 --K 3 --iters 50 t=1                     0.5628 ms
+  --impl seq --size 256 --K 5 --iters 50 t=1                     0.9673 ms
+  --impl seq --size 256 --K 7 --iters 50 t=1                     2.0374 ms
+  --impl seq --size 512 --K 3 --iters 50 t=1                     2.2588 ms
+  --impl seq --size 512 --K 5 --iters 50 t=1                     3.7285 ms
+  --impl seq --size 512 --K 7 --iters 50 t=1                     8.1675 ms
+  --impl seq --size 1024 --K 3 --iters 20 t=1                    9.0445 ms
+  --impl seq --size 1024 --K 5 --iters 20 t=1                   14.9440 ms
+  --impl seq --size 1024 --K 7 --iters 20 t=1                   33.0357 ms
+  --impl seq --size 2048 --K 3 --iters 10 t=1                   36.1702 ms
+  --impl seq --size 2048 --K 5 --iters 10 t=1                   59.2927 ms
+  --impl seq --size 2048 --K 7 --iters 10 t=1                  132.2294 ms
+  --impl cuda --size 256 --K 3 --iters 50 --block 32 8           0.0730 ms
+  --impl cuda --size 256 --K 5 --iters 50 --block 32 8           0.0722 ms
+  --impl cuda --size 256 --K 7 --iters 50 --block 32 8           0.0730 ms
+  --impl cuda --size 512 --K 3 --iters 50 --block 32 8           0.1823 ms
+  --impl cuda --size 512 --K 5 --iters 50 --block 32 8           0.1869 ms
+  --impl cuda --size 512 --K 7 --iters 50 --block 32 8           0.1961 ms
+  --impl cuda --size 1024 --K 3 --iters 20 --block 32 8          0.5300 ms
+  --impl cuda --size 1024 --K 5 --iters 20 --block 32 8          0.4607 ms
+  --impl cuda --size 1024 --K 7 --iters 20 --block 32 8          0.4893 ms
+  --impl cuda --size 2048 --K 3 --iters 10 --block 32 8          1.4727 ms
+  --impl cuda --size 2048 --K 5 --iters 10 --block 32 8          1.5739 ms
+  --impl cuda --size 2048 --K 7 --iters 10 --block 32 8          1.6760 ms
+  --impl cuda_opt --size 256 --K 3 --iters 50 --block 32 8       0.0736 ms
+  --impl cuda_opt --size 256 --K 5 --iters 50 --block 32 8       0.0729 ms
+  --impl cuda_opt --size 256 --K 7 --iters 50 --block 32 8       0.0734 ms
+  --impl cuda_opt --size 512 --K 3 --iters 50 --block 32 8       0.1786 ms
+  --impl cuda_opt --size 512 --K 5 --iters 50 --block 32 8       0.1875 ms
+  --impl cuda_opt --size 512 --K 7 --iters 50 --block 32 8       0.1989 ms
+  --impl cuda_opt --size 1024 --K 3 --iters 20 --block 32 8      0.4495 ms
+  --impl cuda_opt --size 1024 --K 5 --iters 20 --block 32 8      0.4756 ms
+  --impl cuda_opt --size 1024 --K 7 --iters 20 --block 32 8      0.5189 ms
+  --impl cuda_opt --size 2048 --K 3 --iters 10 --block 32 8      1.5284 ms
+  --impl cuda_opt --size 2048 --K 5 --iters 10 --block 32 8      2.1434 ms
+  --impl cuda_opt --size 2048 --K 7 --iters 10 --block 32 8      1.7093 ms
+   (13 s)
+== omp
+  driver has no OpenMP implementation yet; skipping
+   (0 s)
+== cuda_blocks
+  --impl cuda --size 1024 --K 3 --block 32 8 --iters 20          0.4419 ms
+  --impl cuda --size 1024 --K 3 --block 32 4 --iters 20          0.4411 ms
+  --impl cuda --size 1024 --K 3 --block 32 16 --iters 20         0.4493 ms
+  --impl cuda --size 1024 --K 3 --block 32 32 --iters 20         0.4542 ms
+  --impl cuda --size 1024 --K 3 --block 64 4 --iters 20          0.4443 ms
+  --impl cuda --size 1024 --K 3 --block 64 8 --iters 20          0.4411 ms
+  --impl cuda --size 1024 --K 3 --block 128 1 --iters 20         0.4459 ms
+  --impl cuda --size 1024 --K 3 --block 256 1 --iters 20         0.4440 ms
+  --impl cuda --size 1024 --K 3 --block 8 8 --iters 20           0.4424 ms
+  --impl cuda --size 1024 --K 3 --block 16 8 --iters 20          0.5094 ms
+  --impl cuda --size 1024 --K 3 --block 16 16 --iters 20         0.4406 ms
+  --impl cuda --size 1024 --K 3 --block 1 128 --iters 20         0.5857 ms
+  --impl cuda --size 1024 --K 3 --block 4 64 --iters 20          0.4547 ms
+  --impl cuda --size 1024 --K 7 --block 32 8 --iters 20          0.5002 ms
+  --impl cuda --size 1024 --K 7 --block 32 4 --iters 20          0.4877 ms
+  --impl cuda --size 1024 --K 7 --block 32 16 --iters 20         0.4789 ms
+  --impl cuda --size 1024 --K 7 --block 32 32 --iters 20         0.5024 ms
+  --impl cuda --size 1024 --K 7 --block 64 4 --iters 20          0.4891 ms
+  --impl cuda --size 1024 --K 7 --block 64 8 --iters 20          0.4871 ms
+  --impl cuda --size 1024 --K 7 --block 128 1 --iters 20         0.4920 ms
+  --impl cuda --size 1024 --K 7 --block 256 1 --iters 20         0.4834 ms
+  --impl cuda --size 1024 --K 7 --block 8 8 --iters 20           0.4997 ms
+  --impl cuda --size 1024 --K 7 --block 16 8 --iters 20          0.4924 ms
+  --impl cuda --size 1024 --K 7 --block 16 16 --iters 20         0.5078 ms
+  --impl cuda --size 1024 --K 7 --block 1 128 --iters 20         1.0650 ms
+  --impl cuda --size 1024 --K 7 --block 4 64 --iters 20          0.5610 ms
+  --impl cuda --size 2048 --K 3 --block 32 8 --iters 10          1.4853 ms
+  --impl cuda --size 2048 --K 3 --block 32 4 --iters 10          1.5304 ms
+  --impl cuda --size 2048 --K 3 --block 32 16 --iters 10         1.6297 ms
+  --impl cuda --size 2048 --K 3 --block 32 32 --iters 10         1.5276 ms
+  --impl cuda --size 2048 --K 3 --block 64 4 --iters 10          1.4736 ms
+  --impl cuda --size 2048 --K 3 --block 64 8 --iters 10          1.9758 ms
+  --impl cuda --size 2048 --K 3 --block 128 1 --iters 10         1.4679 ms
+  --impl cuda --size 2048 --K 3 --block 256 1 --iters 10         1.4749 ms
+  --impl cuda --size 2048 --K 3 --block 8 8 --iters 10           1.4893 ms
+  --impl cuda --size 2048 --K 3 --block 16 8 --iters 10          1.4806 ms
+  --impl cuda --size 2048 --K 3 --block 16 16 --iters 10         1.4758 ms
+  --impl cuda --size 2048 --K 3 --block 1 128 --iters 10         2.0088 ms
+  --impl cuda --size 2048 --K 3 --block 4 64 --iters 10          1.5879 ms
+  --impl cuda --size 2048 --K 7 --block 32 8 --iters 10          1.6783 ms
+  --impl cuda --size 2048 --K 7 --block 32 4 --iters 10          1.6708 ms
+  --impl cuda --size 2048 --K 7 --block 32 16 --iters 10         1.6679 ms
+  --impl cuda --size 2048 --K 7 --block 32 32 --iters 10         1.7676 ms
+  --impl cuda --size 2048 --K 7 --block 64 4 --iters 10          1.8345 ms
+  --impl cuda --size 2048 --K 7 --block 64 8 --iters 10          2.0791 ms
+  --impl cuda --size 2048 --K 7 --block 128 1 --iters 10         1.6721 ms
+  --impl cuda --size 2048 --K 7 --block 256 1 --iters 10         1.6675 ms
+  --impl cuda --size 2048 --K 7 --block 8 8 --iters 10           1.7307 ms
+  --impl cuda --size 2048 --K 7 --block 16 8 --iters 10          1.6720 ms
+  --impl cuda --size 2048 --K 7 --block 16 16 --iters 10         1.6745 ms
+  --impl cuda --size 2048 --K 7 --block 1 128 --iters 10         4.0757 ms
+  --impl cuda --size 2048 --K 7 --block 4 64 --iters 10          1.9990 ms
+  --impl cuda_opt --size 1024 --K 3 --block 32 8 --iters 20      0.4528 ms
+  --impl cuda_opt --size 1024 --K 3 --block 32 4 --iters 20      0.4602 ms
+  --impl cuda_opt --size 1024 --K 3 --block 32 16 --iters 20      0.4684 ms
+  --impl cuda_opt --size 1024 --K 3 --block 32 32 --iters 20      0.4693 ms
+  --impl cuda_opt --size 1024 --K 3 --block 64 4 --iters 20      0.4534 ms
+  --impl cuda_opt --size 1024 --K 3 --block 64 8 --iters 20      0.5279 ms
+  --impl cuda_opt --size 1024 --K 3 --block 128 1 --iters 20      0.4640 ms
+  --impl cuda_opt --size 1024 --K 3 --block 256 1 --iters 20      0.4653 ms
+  --impl cuda_opt --size 1024 --K 3 --block 8 8 --iters 20       0.4611 ms
+  --impl cuda_opt --size 1024 --K 3 --block 16 8 --iters 20      0.4509 ms
+  --impl cuda_opt --size 1024 --K 3 --block 16 16 --iters 20      0.4575 ms
+  --impl cuda_opt --size 1024 --K 3 --block 1 128 --iters 20      0.5293 ms
+  --impl cuda_opt --size 1024 --K 3 --block 4 64 --iters 20      0.4682 ms
+  --impl cuda_opt --size 1024 --K 7 --block 32 8 --iters 20      0.5340 ms
+  --impl cuda_opt --size 1024 --K 7 --block 32 4 --iters 20      0.5241 ms
+  --impl cuda_opt --size 1024 --K 7 --block 32 16 --iters 20      0.5120 ms
+  --impl cuda_opt --size 1024 --K 7 --block 32 32 --iters 20      0.5596 ms
+  --impl cuda_opt --size 1024 --K 7 --block 64 4 --iters 20      0.5396 ms
+  --impl cuda_opt --size 1024 --K 7 --block 64 8 --iters 20      0.5310 ms
+  --impl cuda_opt --size 1024 --K 7 --block 128 1 --iters 20      0.5366 ms
+  --impl cuda_opt --size 1024 --K 7 --block 256 1 --iters 20      0.5398 ms
+  --impl cuda_opt --size 1024 --K 7 --block 8 8 --iters 20       0.5154 ms
+  --impl cuda_opt --size 1024 --K 7 --block 16 8 --iters 20      0.5224 ms
+  --impl cuda_opt --size 1024 --K 7 --block 16 16 --iters 20      0.5051 ms
+  --impl cuda_opt --size 1024 --K 7 --block 1 128 --iters 20      0.6042 ms
+  --impl cuda_opt --size 1024 --K 7 --block 4 64 --iters 20      0.5251 ms
+  --impl cuda_opt --size 2048 --K 3 --block 32 8 --iters 10      1.5360 ms
+  --impl cuda_opt --size 2048 --K 3 --block 32 4 --iters 10      1.5609 ms
+  --impl cuda_opt --size 2048 --K 3 --block 32 16 --iters 10      1.5557 ms
+  --impl cuda_opt --size 2048 --K 3 --block 32 32 --iters 10      1.6150 ms
+  --impl cuda_opt --size 2048 --K 3 --block 64 4 --iters 10      1.5279 ms
+  --impl cuda_opt --size 2048 --K 3 --block 64 8 --iters 10      1.5505 ms
+  --impl cuda_opt --size 2048 --K 3 --block 128 1 --iters 10      1.5501 ms
+  --impl cuda_opt --size 2048 --K 3 --block 256 1 --iters 10      1.5949 ms
+  --impl cuda_opt --size 2048 --K 3 --block 8 8 --iters 10       1.6064 ms
+  --impl cuda_opt --size 2048 --K 3 --block 16 8 --iters 10      1.6253 ms
+  --impl cuda_opt --size 2048 --K 3 --block 16 16 --iters 10      1.5301 ms
+  --impl cuda_opt --size 2048 --K 3 --block 1 128 --iters 10      1.8266 ms
+  --impl cuda_opt --size 2048 --K 3 --block 4 64 --iters 10      1.5767 ms
+  --impl cuda_opt --size 2048 --K 7 --block 32 8 --iters 10      1.7439 ms
+  --impl cuda_opt --size 2048 --K 7 --block 32 4 --iters 10      1.7175 ms
+  --impl cuda_opt --size 2048 --K 7 --block 32 16 --iters 10      1.7474 ms
+  --impl cuda_opt --size 2048 --K 7 --block 32 32 --iters 10      2.0319 ms
+  --impl cuda_opt --size 2048 --K 7 --block 64 4 --iters 10      1.7194 ms
+  --impl cuda_opt --size 2048 --K 7 --block 64 8 --iters 10      1.7503 ms
+  --impl cuda_opt --size 2048 --K 7 --block 128 1 --iters 10      1.7792 ms
+  --impl cuda_opt --size 2048 --K 7 --block 256 1 --iters 10      1.8338 ms
+  --impl cuda_opt --size 2048 --K 7 --block 8 8 --iters 10       1.7285 ms
+  --impl cuda_opt --size 2048 --K 7 --block 16 8 --iters 10      1.7449 ms
+  --impl cuda_opt --size 2048 --K 7 --block 16 16 --iters 10      1.9363 ms
+  --impl cuda_opt --size 2048 --K 7 --block 1 128 --iters 10      2.5253 ms
+  --impl cuda_opt --size 2048 --K 7 --block 4 64 --iters 10      2.0944 ms
+   (39 s)
+== torch
+   (28 s)
+done: 140 ok, 0 check failures, 0 errors -> results/bench_121915
