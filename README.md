@@ -187,13 +187,6 @@ status: 0 if all pass, 1 if any fail, 2 for missing or malformed files.
 
 ### Not hooked up yet
 
-- **OpenMP.** Being written separately. The build and the unit tests switch
-  it on automatically once `src/conv2d_omp.cpp` exists and defines
-  `conv2d_omp`: the Makefile checks for that exact path and the tests call
-  that exact name. The tests set the schedule with `omp_set_schedule`, so the
-  `static` and `dynamic` variants only differ if the loop uses
-  `schedule(runtime)`. For the external check, run
-  `make validate VALIDATE_IMPLS="seq omp cuda"`.
 - **`src/conv2d_cuda_opt.cu`.** Not built or tested. It defines `conv2d_cuda`
   and `conv2d_kernel`, the same names as `src/conv2d_cuda.cu`, so one of them
   has to be renamed before both can be linked. Then add it to the Makefile and
@@ -249,7 +242,7 @@ needs PyTorch and is skipped if it isn't installed.
 ## Status
 
 - [x] Sequential baseline
-- [ ] OpenMP
+- [x] OpenMP
 - [ ] CUDA 
 - [ ] Benchmarks and plots
 - [ ] Report

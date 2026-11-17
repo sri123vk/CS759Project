@@ -42,9 +42,9 @@ void conv2d_omp_simd(const float* in, float* out, const float* k,
                 const int c_lo = std::max(0, R - j);
                 const int c_hi = std::min(W, W + R - j);
                 
-                #pragma omp simd
+                #pragma omp simd    // SIMD vect. time
                 for (int c = c_lo; c < c_hi; ++c) { // output columns
-                    out[r * W + c] += w * in[y * W + c + j - R]; // good ol axpy
+                    out[r * W + c] += w * in[y * W + c + j - R]; // good ol axpy. Slap ts directly into the output.
                 }
             }
         }

@@ -1,7 +1,7 @@
 // Benchmark driver.
 //
 // Usage:
-//   conv --impl seq|omp|cuda --size N [--K 3] [--iters 10] [--warmup 2]
+//   conv --impl seq|omp|omp_simd|omp_blocked|cuda --size N [--K 3] [--iters 10] [--warmup 2]
 //        [--block BX BY] [--check] [--dump DIR] [--header]
 //
 // Prints one CSV row per run (use --header to print the column names first).
@@ -40,7 +40,7 @@ struct Args {
 
 void usage(const char* prog) {
     std::fprintf(stderr,
-        "usage: %s --impl seq|omp|cuda --size N [--H h --W w] [--K k]\n"
+        "usage: %s --impl seq|omp|omp_simd|omp_blocked|cuda --size N [--H h --W w] [--K k]\n"
         "          [--iters n] [--warmup n] [--block bx by]\n"
         "          [--check] [--dump dir] [--header]\n",
         prog);
@@ -78,8 +78,17 @@ using ConvFn = void (*)(const float*, float*, const float*, int, int, int);
 
 ConvFn pick_cpu(const std::string& impl) {
     if (impl == "seq") return conv2d_seq;
+    // Each OpenMP version is only referenced when the Makefile built its
+    // source file (it then defines CONV_HAVE_<NAME>), so a missing file
+    // means "unknown impl" here instead of a link error.
 #ifdef CONV_HAVE_OMP
     if (impl == "omp") return conv2d_omp;
+#endif
+#ifdef CONV_HAVE_OMP_SIMD
+    if (impl == "omp_simd") return conv2d_omp_simd;
+#endif
+#ifdef CONV_HAVE_OMP_BLOCKED
+    if (impl == "omp_blocked") return conv2d_omp_blocked;
 #endif
     std::fprintf(stderr, "unknown impl: %s\n", impl.c_str());
     std::exit(1);
