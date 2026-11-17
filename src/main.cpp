@@ -1,9 +1,8 @@
 // Benchmark driver.
 //
 // Usage:
-//   conv --impl seq|omp|omp_simd|omp_blocked|cuda|cuda_opt --size N [--K 3] [--iters 10] [--warmup 2]
-//        [--block BX BY] [--check] [--dump DIR] [--header]
-
+//   conv --impl seq|omp|cuda|cuda_opt|cuda_const|cuda_tiled_const|cuda_multiout --size N [--K 3] [--iters 10] [--warmup 2]
+//        [--block BX BY|auto] [--check] [--dump DIR] [--header]
 //
 // Prints one CSV row per run (use --header to print the column names first).
 // --block  CUDA thread-block shape (default 32 8); auto tunes candidates
@@ -21,6 +20,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
+#include <stdexcept>
 #include <limits>
 #include <string>
 #include <vector>
@@ -42,8 +43,8 @@ struct Args {
 
 void usage(const char* prog) {
     std::fprintf(stderr,
-        "usage: %s --impl seq|omp|omp_simd|omp_blocked|cuda|cuda_opt --size N [--H h --W w] [--K k]\n"
-        "          [--iters n] [--warmup n] [--block bx by]\n"
+        "usage: %s --impl seq|omp|cuda|cuda_opt|cuda_const|cuda_tiled_const|cuda_multiout --size N [--H h --W w] [--K k]\n"
+        "          [--iters n] [--warmup n] [--block bx by|auto]\n"
         "          [--check] [--dump dir] [--header]\n",
         prog);
     std::exit(1);
@@ -85,21 +86,19 @@ Args parse(int argc, char** argv) {
     return a;
 }
 
+// Additional names are recognized even in CPU-only builds, so main can
+// report a useful error if CUDA was not compiled in.
+bool is_extra_cuda(const std::string& impl) {
+    return impl == "cuda_const" || impl == "cuda_tiled_const" ||
+           impl == "cuda_multiout";
+}
+
 using ConvFn = void (*)(const float*, float*, const float*, int, int, int);
 
 ConvFn pick_cpu(const std::string& impl) {
     if (impl == "seq") return conv2d_seq;
-    // Each OpenMP version is only referenced when the Makefile built its
-    // source file (it then defines CONV_HAVE_<NAME>), so a missing file
-    // means "unknown impl" here instead of a link error.
 #ifdef CONV_HAVE_OMP
     if (impl == "omp") return conv2d_omp;
-#endif
-#ifdef CONV_HAVE_OMP_SIMD
-    if (impl == "omp_simd") return conv2d_omp_simd;
-#endif
-#ifdef CONV_HAVE_OMP_BLOCKED
-    if (impl == "omp_blocked") return conv2d_omp_blocked;
 #endif
     std::fprintf(stderr, "unknown impl: %s\n", impl.c_str());
     std::exit(1);
@@ -162,6 +161,22 @@ Timings bench_cuda(const Args& a, const std::vector<float>& in,
 }
 #endif
 #if defined(CONV_HAVE_CUDA) && defined(CONV_HAVE_CUDA_OPT)
+// Dispatch each named variant without replacing the original implementations.
+CudaTimes run_opt_or_variant(const std::string& impl, const CudaConv& c,
+                             const float* in, float* out, const float* k,
+                             int bx, int by) {
+    if (impl == "cuda_opt") return cuda_conv_run_opt(c, in, out, k, bx, by);
+#ifdef CONV_HAVE_CUDA_VARIANTS
+    if (impl == "cuda_const")
+        return cuda_conv_run_variant(c, in, out, k, bx, by, CudaVariant::Constant);
+    if (impl == "cuda_tiled_const")
+        return cuda_conv_run_variant(c, in, out, k, bx, by, CudaVariant::TiledConstant);
+    if (impl == "cuda_multiout")
+        return cuda_conv_run_variant(c, in, out, k, bx, by, CudaVariant::MultiOutput);
+#endif
+    throw std::invalid_argument("unknown or unavailable CUDA variant: " + impl);
+}
+
 // Allocate once, then time the optimized copy/kernel/copy path like cuda.
 Timings bench_cuda_opt(const Args& a, const std::vector<float>& in,
                        std::vector<float>& out, const std::vector<float>& k) {
@@ -176,12 +191,12 @@ Timings bench_cuda_opt(const Args& a, const std::vector<float>& in,
     std::vector<double> h2d, kern, d2h;
     try {
         for (int i = 0; i < a.warmup; ++i)
-            cuda_conv_run_opt(c, in.data(), out.data(), k.data(), a.bx, a.by);
+            run_opt_or_variant(a.impl, c, in.data(), out.data(), k.data(), a.bx, a.by);
         t.call_ms.reserve(a.iters);
         for (int i = 0; i < a.iters; ++i) {
             CudaTimes stages;
             t.call_ms.push_back(time_ms([&] {
-                stages = cuda_conv_run_opt(c, in.data(), out.data(), k.data(), a.bx, a.by);
+                stages = run_opt_or_variant(a.impl, c, in.data(), out.data(), k.data(), a.bx, a.by);
             }));
             h2d.push_back(stages.h2d_ms);
             kern.push_back(stages.kernel_ms);
@@ -202,7 +217,7 @@ Timings bench_cuda_opt(const Args& a, const std::vector<float>& in,
 // Tune outside the reported benchmark samples; selection cost is sent to stderr.
 void autotune_block(Args& a, const std::vector<float>& in,
                     std::vector<float>& out, const std::vector<float>& k) {
-    const int candidates[][2] = {{32, 8}, {16, 16}, {32, 4}, {16, 8}, {8, 8}};
+    const int candidates[][2] = {{32, 8}, {32, 16}, {16, 16}, {32, 4}, {16, 8}, {8, 8}};
     constexpr int trials = 3;
     int best_x = 0, best_y = 0;
     double best_kernel = std::numeric_limits<double>::infinity();
@@ -214,18 +229,22 @@ void autotune_block(Args& a, const std::vector<float>& in,
                 const int bx = block[0], by = block[1];
                 if (!cuda_block_supported(a.H, a.W, bx, by)) continue;
                 auto run = [&]() {
-                    return a.impl == "cuda_opt"
-                        ? cuda_conv_run_opt(c, in.data(), out.data(), k.data(), bx, by)
-                        : cuda_conv_run(c, in.data(), out.data(), k.data(), bx, by);
+                    return a.impl == "cuda"
+                        ? cuda_conv_run(c, in.data(), out.data(), k.data(), bx, by)
+                        : run_opt_or_variant(a.impl, c, in.data(), out.data(), k.data(), bx, by);
                 };
-                run(); // One warm-up for this candidate.
-                std::vector<double> samples;
-                for (int i = 0; i < trials; ++i) samples.push_back(run().kernel_ms);
-                const double kernel_ms = median(samples);
-                if (std::isfinite(kernel_ms) && kernel_ms >= 0 && kernel_ms < best_kernel) {
-                    best_kernel = kernel_ms;
-                    best_x = bx;
-                    best_y = by;
+                try {
+                    run(); // One warm-up for this candidate.
+                    std::vector<double> samples;
+                    for (int i = 0; i < trials; ++i) samples.push_back(run().kernel_ms);
+                    const double kernel_ms = median(samples);
+                    if (std::isfinite(kernel_ms) && kernel_ms >= 0 && kernel_ms < best_kernel) {
+                        best_kernel = kernel_ms;
+                        best_x = bx;
+                        best_y = by;
+                    }
+                } catch (const std::invalid_argument& error) {
+                    std::fprintf(stderr, "skip auto-block %dx%d: %s\n", bx, by, error.what());
                 }
             }
         } catch (...) {
@@ -258,6 +277,7 @@ int main(int argc, char** argv) {
     Args a = parse(argc, argv);
     const bool cuda = (a.impl == "cuda");
     const bool cuda_opt = (a.impl == "cuda_opt");
+    const bool cuda_extra = is_extra_cuda(a.impl);
     const size_t n = (size_t)a.H * a.W;
     // out starts as NaN so any pixel an implementation never writes fails --check.
     std::vector<float> in(n), k((size_t)a.K * a.K),
@@ -265,9 +285,11 @@ int main(int argc, char** argv) {
     fill_random(in, 759);
     fill_random(k, 42);
 
+    Timings t;
+    try {
     if (a.auto_block) {
-        if (!cuda && !cuda_opt) {
-            std::fprintf(stderr, "--block auto requires --impl cuda or cuda_opt\n");
+        if (!cuda && !cuda_opt && !cuda_extra) {
+            std::fprintf(stderr, "--block auto requires a CUDA implementation\n");
             return 1;
         }
 #if defined(CONV_HAVE_CUDA) && defined(CONV_HAVE_CUDA_OPT)
@@ -278,8 +300,6 @@ int main(int argc, char** argv) {
 
 #endif
     }
-
-    Timings t;
 
     if (cuda) {
 #ifdef CONV_HAVE_CUDA
@@ -292,15 +312,19 @@ int main(int argc, char** argv) {
     return 1;
 #endif
 
-    } else if (cuda_opt) {
+    } else if (cuda_opt || cuda_extra) {
 #if defined(CONV_HAVE_CUDA) && defined(CONV_HAVE_CUDA_OPT)
     t = bench_cuda_opt(a, in, out, k);
 #else
-    std::fprintf(stderr, "staged cuda_opt requires both CUDA implementations to be built\n");
+    std::fprintf(stderr, "CUDA implementation '%s' is unavailable in this build\n", a.impl.c_str());
     return 1;
 #endif
     } else {
     t = bench_cpu(a, in, out, k);
+    }
+    } catch (const std::exception& error) {
+        std::fprintf(stderr, "CUDA benchmark failed: %s\n", error.what());
+        return 1;
     }
 
     ErrStats err;
@@ -322,8 +346,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    const std::string bx = (cuda || cuda_opt) ? std::to_string(a.bx) : "";
-    const std::string by = (cuda || cuda_opt) ? std::to_string(a.by) : "";
+    const std::string bx = (cuda || cuda_opt || cuda_extra) ? std::to_string(a.bx) : "";
+    const std::string by = (cuda || cuda_opt || cuda_extra) ? std::to_string(a.by) : "";
     if (a.header)
         std::printf("impl,H,W,K,bx,by,iters,median_ms,min_ms,"
                     "h2d_ms,kernel_ms,d2h_ms,alloc_ms,"

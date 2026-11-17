@@ -9,23 +9,20 @@ CPU_SRCS := src/main.cpp src/conv2d_seq.cpp
 TEST_SRCS := tests/test_conv.cpp src/conv2d_seq.cpp
 HEADERS := include/conv2d.h include/utils.h
 
-# OpenMP variants: omp, omp_simd, omp_blocked
-OMP_VARIANTS := omp omp_simd omp_blocked
-OMP_BUILT    := $(strip $(foreach v,$(OMP_VARIANTS),$(if $(wildcard src/conv2d_$(v).cpp),$(v))))
-ifneq ($(OMP_BUILT),)
-  OMP_SRCS  := $(OMP_BUILT:%=src/conv2d_%.cpp)
-  CPU_SRCS  += $(OMP_SRCS)
-  TEST_SRCS += $(OMP_SRCS)
-  OMPFLAGS  := -fopenmp $(foreach v,$(OMP_BUILT),-DCONV_HAVE_$(shell echo $(v) | tr a-z A-Z))
+# The OpenMP version is built in (and tested) once its source file exists.
+ifneq ($(wildcard src/conv2d_omp.cpp),)
+  CPU_SRCS  += src/conv2d_omp.cpp
+  TEST_SRCS += src/conv2d_omp.cpp
+  OMPFLAGS  := -fopenmp -DCONV_HAVE_OMP
 endif
 
 # The CUDA version is built in when nvcc is on the PATH; `make CUDA=0` skips it.
 CUDA ?= $(if $(shell command -v $(NVCC) 2>/dev/null),1,0)
 ifeq ($(CUDA),1)
-  CUDA_OBJ    := $(BIN)/conv2d_cuda.o $(BIN)/conv2d_cuda_opt.o
-  CUDAFLAGS   := -DCONV_HAVE_CUDA -DCONV_HAVE_CUDA_OPT
+  CUDA_OBJ    := $(BIN)/conv2d_cuda.o $(BIN)/conv2d_cuda_opt.o $(BIN)/conv2d_cuda_variants.o
+  CUDAFLAGS   := -DCONV_HAVE_CUDA -DCONV_HAVE_CUDA_OPT -DCONV_HAVE_CUDA_VARIANTS
   CUDA_LIBDIR ?= $(abspath $(dir $(shell command -v $(NVCC)))../lib64)
-  CUDA_LIBS   := -L$(CUDA_LIBDIR) -Wl,-rpath,$(CUDA_LIBDIR) -lcudart
+  CUDA_LIBS   := -L$(CUDA_LIBDIR) -Wl,-rpath,$(CUDA_LIBDIR) -lcudart -pthread
 endif
 
 # External check (make validate): bin/conv dumps its output for each shape
@@ -58,6 +55,9 @@ $(BIN)/conv2d_cuda.o: src/conv2d_cuda.cu include/conv2d.h | $(BIN)
 
 $(BIN)/conv2d_cuda_opt.o: src/conv2d_cuda_opt.cu include/conv2d.h | $(BIN)
 	$(NVCC) $(CPPFLAGS) $(NVCCFLAGS) -c $< -o $@
+
+$(BIN)/conv2d_cuda_variants.o: src/conv2d_cuda_variants.cu include/conv2d.h | $(BIN)
+	$(NVCC) $(CPPFLAGS) $(NVCCFLAGS) -Xcompiler -pthread -c $< -o $@
 	
 test: $(BIN)/test_conv
 	./$(BIN)/test_conv
