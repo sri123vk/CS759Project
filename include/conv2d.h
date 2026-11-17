@@ -10,22 +10,10 @@
 void conv2d_seq(const float* in, float* out, const float* k,
                 int H, int W, int K);
 
-// OpenMP versions. Thread count and schedule come from the usual OpenMP
-// controls (OMP_NUM_THREADS / OMP_SCHEDULE or omp_set_*), since every one
-// parallelizes over rows with schedule(runtime).
-
-// Naive: one output pixel at a time, as in conv2d_seq.
+// OpenMP version. Thread count and schedule come from the usual OpenMP
+// controls (OMP_NUM_THREADS / OMP_SCHEDULE or omp_set_*), since the loop
+// uses schedule(runtime).
 void conv2d_omp(const float* in, float* out, const float* k,
-                int H, int W, int K);
-
-// SIMD: one filter tap at a time across the whole row (axpy form),
-// vectorized with omp simd.
-void conv2d_omp_simd(const float* in, float* out, const float* k,
-                int H, int W, int K);
-
-// Blocked: the SIMD form applied to blocks of columns, so a block's running
-// sums stay together through all the taps before being stored once.
-void conv2d_omp_blocked(const float* in, float* out, const float* k,
                 int H, int W, int K);
 
 //optimized version for the large size matrices
@@ -84,3 +72,17 @@ CudaTimes cuda_conv_run(const CudaConv& c, const float* in, float* out,
 bool cuda_block_supported(int H, int W, int bx, int by);
 CudaTimes cuda_conv_run_opt(const CudaConv& c, const float* in, float* out,
                             const float* k, int bx, int by);
+
+// Additional single-channel CUDA experiments. The existing `cuda` and
+// `cuda_opt` implementations remain independent and unchanged.
+enum class CudaVariant {
+    Constant,        // one output per thread, constant-memory filter
+    TiledConstant,   // shared-memory image tile, constant-memory filter
+    MultiOutput      // two outputs per thread, global-memory filter
+};
+
+// Uses the same reusable buffers, host pointers, and event timings as
+// cuda_conv_run. Constant-memory variants support odd K up to 63.
+CudaTimes cuda_conv_run_variant(const CudaConv& c, const float* in, float* out,
+                                const float* k, int bx, int by,
+                                CudaVariant variant);

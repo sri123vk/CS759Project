@@ -60,9 +60,30 @@ python -c "import sys, numpy, scipy.signal; print('Using Python:', sys.executabl
 echo "Running external validation"
 python validation/validate.py "$dump_dir" -v
 
+# Use the PyTorch environment for the library benchmark.
+set +u
+conda activate conv_torch312
+set -u
 
 # ------------------------------------------------------------
 # Benchmark the sequential and CUDA implementations.
 # ------------------------------------------------------------
-srun bash scripts/bench.sh -o "results/bench_${SLURM_JOB_ID}"
+# Use the Python from the currently activated Conda environment.
+export PYTHON="$(command -v python)"
 
+# Check PyTorch on the allocated GPU node before benchmarking.
+srun "$PYTHON" -c '
+import sys
+import torch
+
+print("Python:", sys.executable)
+print("PyTorch:", torch.__version__)
+print("CUDA available:", torch.cuda.is_available())
+print("cuDNN available:", torch.backends.cudnn.is_available())
+
+if not torch.cuda.is_available() or not torch.backends.cudnn.is_available():
+    sys.exit("CUDA-enabled PyTorch or cuDNN is unavailable")
+'
+
+# Keep the existing behavior: run all benchmark experiments.
+srun bash scripts/bench.sh -o "results/bench_${SLURM_JOB_ID}"

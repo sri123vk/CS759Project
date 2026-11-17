@@ -19,7 +19,7 @@
 # the omp sweep, names starting with "cuda" through the cuda_blocks sweep.
 #
 # Settings (environment variables, defaults in brackets):
-#   IMPLS        ["seq omp cuda cuda_opt omp_simd omp_blocked cuda_const cuda_tiled cuda_tiled_mo"]
+#   IMPLS        ["seq omp cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout ..."]
 #                names the driver doesn't know are skipped
 #   SIZES        ["256 512 1024 2048"]        KS ["3 5 7"]   (proposal)
 #   OMP_SIZES    ["512 2048"]   OMP_KS ["3 7"]   THREADS [1 2 4 ... nproc]
@@ -63,7 +63,7 @@ if ((QUICK)); then
     : "${BLOCK_SIZES:=1024}" "${BLOCK_KS:=3}" "${BLOCKS:=32x8 16x16 128x1 1x128}"
     : "${SCHEDULES:=static dynamic}" "${ITERS:=5}"
 fi
-IMPLS=${IMPLS:-"seq omp cuda cuda_opt omp_simd omp_blocked cuda_const cuda_tiled cuda_tiled_mo"}
+IMPLS=${IMPLS:-"seq omp cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout omp_simd omp_blocked cuda_tiled cuda_tiled_mo"}
 SIZES=${SIZES:-"256 512 1024 2048"}
 KS=${KS:-"3 5 7"}
 OMP_SIZES=${OMP_SIZES:-"512 2048"}
@@ -140,7 +140,7 @@ exp_baseline() {
             local common=(--impl "$i" --size "$n" --K "$k" --iters "$(iters_for "$n")")
             case $i in
                 omp*)  run "$csv" "$NPROC" static "${common[@]}" ;;
-                cuda|cuda_opt)
+                cuda|cuda_opt|cuda_const|cuda_tiled_const|cuda_multiout)
                     if [[ $BLOCK == auto ]]; then
                         run "$csv" "" "" "${common[@]}" --block auto
                     else

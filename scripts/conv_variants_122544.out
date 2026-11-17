@@ -1,0 +1,19 @@
+Confirming the existing shared-memory path
+cuda_opt: shared tile, block=32x8, K=7, shared=2128 bytes
+impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass
+cuda_opt,33,65,7,32,8,1,0.9654,0.9654,0.0254,0.0286,0.0122,0.1572,9.537e-07,6.126e-05,1.518e-02,0,1
+Testing cuda with partial blocks
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation         checks   failed
+cuda/7x3                  285        0
+
+ALL PASSED
+Testing cuda_opt with partial blocks
+no implementation matches 'cuda_opt/7x3' (try --list)
+srun: error: euler03: task 0: Exited with exit code 2

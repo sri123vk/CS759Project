@@ -1,0 +1,197 @@
+Confirming the existing shared-memory path
+cuda_opt: shared tile, block=32x8, K=7, shared=2128 bytes
+impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass
+cuda_opt,33,65,7,32,8,1,1.3216,1.3216,0.0255,0.0287,0.0116,0.1589,9.537e-07,6.126e-05,1.518e-02,0,1
+Testing cuda with partial blocks
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation         checks   failed
+cuda/7x3                  285        0
+
+ALL PASSED
+Testing cuda_opt with partial blocks
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation         checks   failed
+cuda_opt/7x3              285        0
+
+ALL PASSED
+Testing cuda_const with partial blocks
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation         checks   failed
+cuda_const/7x3            285        0
+
+ALL PASSED
+Testing cuda_tiled_const with partial blocks
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation         checks   failed
+cuda_tiled_const/7x3      285        0
+
+ALL PASSED
+Testing cuda_multiout with partial blocks
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation         checks   failed
+cuda_multiout/7x3         285        0
+
+ALL PASSED
+implementations: seq cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout
+results -> results/cuda_variants_122661
+== baseline
+  --impl seq --size 1024 --K 3 --iters 10 t=1                    8.7348 ms
+  --impl seq --size 1024 --K 7 --iters 10 t=1                   32.0219 ms
+  --impl seq --size 2048 --K 3 --iters 10 t=1                   34.9240 ms
+  --impl seq --size 2048 --K 7 --iters 10 t=1                  127.9351 ms
+  --impl cuda --size 1024 --K 3 --iters 10 --block 32 8          0.4515 ms
+  --impl cuda --size 1024 --K 7 --iters 10 --block 32 8          0.5099 ms
+  --impl cuda --size 2048 --K 3 --iters 10 --block 32 8          1.4907 ms
+  --impl cuda --size 2048 --K 7 --iters 10 --block 32 8          1.7554 ms
+  --impl cuda_opt --size 1024 --K 3 --iters 10 --block 32 8      0.4467 ms
+  --impl cuda_opt --size 1024 --K 7 --iters 10 --block 32 8      0.5185 ms
+  --impl cuda_opt --size 2048 --K 3 --iters 10 --block 32 8      2.7992 ms
+  --impl cuda_opt --size 2048 --K 7 --iters 10 --block 32 8      1.8067 ms
+  --impl cuda_const --size 1024 --K 3 --iters 10 --block 32 8      0.4710 ms
+  --impl cuda_const --size 1024 --K 7 --iters 10 --block 32 8      0.4877 ms
+  --impl cuda_const --size 2048 --K 3 --iters 10 --block 32 8      1.4836 ms
+  --impl cuda_const --size 2048 --K 7 --iters 10 --block 32 8      1.6694 ms
+  --impl cuda_tiled_const --size 1024 --K 3 --iters 10 --block 32 8      0.4487 ms
+  --impl cuda_tiled_const --size 1024 --K 7 --iters 10 --block 32 8      0.4881 ms
+  --impl cuda_tiled_const --size 2048 --K 3 --iters 10 --block 32 8      1.5093 ms
+  --impl cuda_tiled_const --size 2048 --K 7 --iters 10 --block 32 8      1.6840 ms
+  --impl cuda_multiout --size 1024 --K 3 --iters 10 --block 32 8      0.4285 ms
+  --impl cuda_multiout --size 1024 --K 7 --iters 10 --block 32 8      0.4924 ms
+  --impl cuda_multiout --size 2048 --K 3 --iters 10 --block 32 8      1.4566 ms
+  --impl cuda_multiout --size 2048 --K 7 --iters 10 --block 32 8      1.6634 ms
+   (11 s)
+== cuda_blocks
+  --impl cuda --size 1024 --K 3 --block 32 8 --iters 10          0.4379 ms
+  --impl cuda --size 1024 --K 3 --block 32 16 --iters 10         0.4429 ms
+  --impl cuda --size 1024 --K 3 --block 16 16 --iters 10         0.4366 ms
+  --impl cuda --size 1024 --K 3 --block 8 8 --iters 10           0.4429 ms
+  --impl cuda --size 1024 --K 3 --block 1 128 --iters 10         0.6021 ms
+  --impl cuda --size 1024 --K 7 --block 32 8 --iters 10          0.5105 ms
+  --impl cuda --size 1024 --K 7 --block 32 16 --iters 10         0.5121 ms
+  --impl cuda --size 1024 --K 7 --block 16 16 --iters 10         0.4964 ms
+  --impl cuda --size 1024 --K 7 --block 8 8 --iters 10           0.5190 ms
+  --impl cuda --size 1024 --K 7 --block 1 128 --iters 10         1.1558 ms
+  --impl cuda --size 2048 --K 3 --block 32 8 --iters 10          1.4854 ms
+  --impl cuda --size 2048 --K 3 --block 32 16 --iters 10         1.5171 ms
+  --impl cuda --size 2048 --K 3 --block 16 16 --iters 10         1.4839 ms
+  --impl cuda --size 2048 --K 3 --block 8 8 --iters 10           1.4982 ms
+  --impl cuda --size 2048 --K 3 --block 1 128 --iters 10         2.1670 ms
+  --impl cuda --size 2048 --K 7 --block 32 8 --iters 10          2.9155 ms
+  --impl cuda --size 2048 --K 7 --block 32 16 --iters 10         1.7387 ms
+  --impl cuda --size 2048 --K 7 --block 16 16 --iters 10         1.7443 ms
+  --impl cuda --size 2048 --K 7 --block 8 8 --iters 10           1.8789 ms
+  --impl cuda --size 2048 --K 7 --block 1 128 --iters 10         4.6535 ms
+  --impl cuda_opt --size 1024 --K 3 --block 32 8 --iters 10      0.4506 ms
+  --impl cuda_opt --size 1024 --K 3 --block 32 16 --iters 10      0.4574 ms
+  --impl cuda_opt --size 1024 --K 3 --block 16 16 --iters 10      0.4459 ms
+  --impl cuda_opt --size 1024 --K 3 --block 8 8 --iters 10       0.4557 ms
+  --impl cuda_opt --size 1024 --K 3 --block 1 128 --iters 10      0.5425 ms
+  --impl cuda_opt --size 1024 --K 7 --block 32 8 --iters 10      0.5137 ms
+  --impl cuda_opt --size 1024 --K 7 --block 32 16 --iters 10      0.5213 ms
+  --impl cuda_opt --size 1024 --K 7 --block 16 16 --iters 10      0.5259 ms
+  --impl cuda_opt --size 1024 --K 7 --block 8 8 --iters 10       0.5818 ms
+  --impl cuda_opt --size 1024 --K 7 --block 1 128 --iters 10      0.6242 ms
+  --impl cuda_opt --size 2048 --K 3 --block 32 8 --iters 10      1.5208 ms
+  --impl cuda_opt --size 2048 --K 3 --block 32 16 --iters 10      1.5387 ms
+  --impl cuda_opt --size 2048 --K 3 --block 16 16 --iters 10      1.5087 ms
+  --impl cuda_opt --size 2048 --K 3 --block 8 8 --iters 10       1.5258 ms
+  --impl cuda_opt --size 2048 --K 3 --block 1 128 --iters 10      1.9257 ms
+  --impl cuda_opt --size 2048 --K 7 --block 32 8 --iters 10      1.7977 ms
+  --impl cuda_opt --size 2048 --K 7 --block 32 16 --iters 10      1.8153 ms
+  --impl cuda_opt --size 2048 --K 7 --block 16 16 --iters 10      1.7841 ms
+  --impl cuda_opt --size 2048 --K 7 --block 8 8 --iters 10       1.7987 ms
+  --impl cuda_opt --size 2048 --K 7 --block 1 128 --iters 10      2.2335 ms
+  --impl cuda_const --size 1024 --K 3 --block 32 8 --iters 10      0.4335 ms
+  --impl cuda_const --size 1024 --K 3 --block 32 16 --iters 10      0.4474 ms
+  --impl cuda_const --size 1024 --K 3 --block 16 16 --iters 10      0.4310 ms
+  --impl cuda_const --size 1024 --K 3 --block 8 8 --iters 10      0.4342 ms
+  --impl cuda_const --size 1024 --K 3 --block 1 128 --iters 10      0.5939 ms
+  --impl cuda_const --size 1024 --K 7 --block 32 8 --iters 10      0.4766 ms
+  --impl cuda_const --size 1024 --K 7 --block 32 16 --iters 10      0.4958 ms
+  --impl cuda_const --size 1024 --K 7 --block 16 16 --iters 10      0.4852 ms
+  --impl cuda_const --size 1024 --K 7 --block 8 8 --iters 10      0.5100 ms
+  --impl cuda_const --size 1024 --K 7 --block 1 128 --iters 10      1.2483 ms
+  --impl cuda_const --size 2048 --K 3 --block 32 8 --iters 10      1.4871 ms
+  --impl cuda_const --size 2048 --K 3 --block 32 16 --iters 10      1.4896 ms
+  --impl cuda_const --size 2048 --K 3 --block 16 16 --iters 10      1.4954 ms
+  --impl cuda_const --size 2048 --K 3 --block 8 8 --iters 10      1.4744 ms
+  --impl cuda_const --size 2048 --K 3 --block 1 128 --iters 10      2.1506 ms
+  --impl cuda_const --size 2048 --K 7 --block 32 8 --iters 10      1.6682 ms
+  --impl cuda_const --size 2048 --K 7 --block 32 16 --iters 10      2.9306 ms
+  --impl cuda_const --size 2048 --K 7 --block 16 16 --iters 10      1.6717 ms
+  --impl cuda_const --size 2048 --K 7 --block 8 8 --iters 10      1.7635 ms
+  --impl cuda_const --size 2048 --K 7 --block 1 128 --iters 10      4.8356 ms
+  --impl cuda_tiled_const --size 1024 --K 3 --block 32 8 --iters 10      0.4441 ms
+  --impl cuda_tiled_const --size 1024 --K 3 --block 32 16 --iters 10      0.4480 ms
+  --impl cuda_tiled_const --size 1024 --K 3 --block 16 16 --iters 10      0.4385 ms
+  --impl cuda_tiled_const --size 1024 --K 3 --block 8 8 --iters 10      0.4449 ms
+  --impl cuda_tiled_const --size 1024 --K 3 --block 1 128 --iters 10      0.5453 ms
+  --impl cuda_tiled_const --size 1024 --K 7 --block 32 8 --iters 10      0.4997 ms
+  --impl cuda_tiled_const --size 1024 --K 7 --block 32 16 --iters 10      0.4936 ms
+  --impl cuda_tiled_const --size 1024 --K 7 --block 16 16 --iters 10      0.4853 ms
+  --impl cuda_tiled_const --size 1024 --K 7 --block 8 8 --iters 10      0.4902 ms
+  --impl cuda_tiled_const --size 1024 --K 7 --block 1 128 --iters 10      0.5984 ms
+  --impl cuda_tiled_const --size 2048 --K 3 --block 32 8 --iters 10      1.5075 ms
+  --impl cuda_tiled_const --size 2048 --K 3 --block 32 16 --iters 10      1.5124 ms
+  --impl cuda_tiled_const --size 2048 --K 3 --block 16 16 --iters 10      1.5123 ms
+  --impl cuda_tiled_const --size 2048 --K 3 --block 8 8 --iters 10      1.5183 ms
+  --impl cuda_tiled_const --size 2048 --K 3 --block 1 128 --iters 10      1.9432 ms
+  --impl cuda_tiled_const --size 2048 --K 7 --block 32 8 --iters 10      1.6867 ms
+  --impl cuda_tiled_const --size 2048 --K 7 --block 32 16 --iters 10      1.6842 ms
+  --impl cuda_tiled_const --size 2048 --K 7 --block 16 16 --iters 10      1.6633 ms
+  --impl cuda_tiled_const --size 2048 --K 7 --block 8 8 --iters 10      1.6729 ms
+  --impl cuda_tiled_const --size 2048 --K 7 --block 1 128 --iters 10      2.1239 ms
+  --impl cuda_multiout --size 1024 --K 3 --block 32 8 --iters 10      0.4373 ms
+  --impl cuda_multiout --size 1024 --K 3 --block 32 16 --iters 10      0.4295 ms
+  --impl cuda_multiout --size 1024 --K 3 --block 16 16 --iters 10      0.4327 ms
+  --impl cuda_multiout --size 1024 --K 3 --block 8 8 --iters 10      0.4327 ms
+  --impl cuda_multiout --size 1024 --K 3 --block 1 128 --iters 10      0.5679 ms
+  --impl cuda_multiout --size 1024 --K 7 --block 32 8 --iters 10      0.4860 ms
+  --impl cuda_multiout --size 1024 --K 7 --block 32 16 --iters 10      0.4928 ms
+  --impl cuda_multiout --size 1024 --K 7 --block 16 16 --iters 10      0.4910 ms
+  --impl cuda_multiout --size 1024 --K 7 --block 8 8 --iters 10      0.5206 ms
+  --impl cuda_multiout --size 1024 --K 7 --block 1 128 --iters 10      1.1259 ms
+  --impl cuda_multiout --size 2048 --K 3 --block 32 8 --iters 10      1.4636 ms
+  --impl cuda_multiout --size 2048 --K 3 --block 32 16 --iters 10      1.4587 ms
+  --impl cuda_multiout --size 2048 --K 3 --block 16 16 --iters 10      1.4589 ms
+  --impl cuda_multiout --size 2048 --K 3 --block 8 8 --iters 10      1.4873 ms
+  --impl cuda_multiout --size 2048 --K 3 --block 1 128 --iters 10      2.0175 ms
+  --impl cuda_multiout --size 2048 --K 7 --block 32 8 --iters 10      1.6769 ms
+  --impl cuda_multiout --size 2048 --K 7 --block 32 16 --iters 10      1.6811 ms
+  --impl cuda_multiout --size 2048 --K 7 --block 16 16 --iters 10      1.6680 ms
+  --impl cuda_multiout --size 2048 --K 7 --block 8 8 --iters 10      1.8083 ms
+  --impl cuda_multiout --size 2048 --K 7 --block 1 128 --iters 10      4.3295 ms
+   (42 s)
+done: 124 ok, 0 check failures, 0 errors -> results/cuda_variants_122661
+Results: results/cuda_variants_122661
+implementations: seq cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout
