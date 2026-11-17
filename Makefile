@@ -9,11 +9,14 @@ CPU_SRCS := src/main.cpp src/conv2d_seq.cpp
 TEST_SRCS := tests/test_conv.cpp src/conv2d_seq.cpp
 HEADERS := include/conv2d.h include/utils.h
 
-# The OpenMP version is built in (and tested) once its source file exists.
-ifneq ($(wildcard src/conv2d_omp.cpp),)
-  CPU_SRCS  += src/conv2d_omp.cpp
-  TEST_SRCS += src/conv2d_omp.cpp
-  OMPFLAGS  := -fopenmp -DCONV_HAVE_OMP
+# OpenMP variants: omp, omp_simd, omp_blocked
+OMP_VARIANTS := omp omp_simd omp_blocked
+OMP_BUILT    := $(strip $(foreach v,$(OMP_VARIANTS),$(if $(wildcard src/conv2d_$(v).cpp),$(v))))
+ifneq ($(OMP_BUILT),)
+  OMP_SRCS  := $(OMP_BUILT:%=src/conv2d_%.cpp)
+  CPU_SRCS  += $(OMP_SRCS)
+  TEST_SRCS += $(OMP_SRCS)
+  OMPFLAGS  := -fopenmp $(foreach v,$(OMP_BUILT),-DCONV_HAVE_$(shell echo $(v) | tr a-z A-Z))
 endif
 
 # The CUDA version is built in when nvcc is on the PATH; `make CUDA=0` skips it.
