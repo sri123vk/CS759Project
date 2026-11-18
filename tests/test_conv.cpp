@@ -7,9 +7,14 @@
 //   -v             also print passing checks
 //
 // Every test runs on every implementation compiled in (see all_impls()):
-//   seq                           always
-//   omp/<schedule>/t<threads>     when built with -DCONV_HAVE_OMP
-//   cuda/<bx>x<by>                when built with -DCONV_HAVE_CUDA
+//   seq                                   always
+//   omp/<schedule>/t<threads>             when built with -DCONV_HAVE_OMP
+//   omp_simd/<schedule>/t<threads>        when built with -DCONV_HAVE_OMP_SIMD
+//   omp_blocked/<schedule>/t<threads>     when built with -DCONV_HAVE_OMP_BLOCKED
+//   cuda/<bx>x<by>                        when built with -DCONV_HAVE_CUDA
+//   cuda_opt/<bx>x<by>                    when built with -DCONV_HAVE_CUDA_OPT
+//   cuda_const, cuda_tiled_const, cuda_multiout /<bx>x<by>
+//                                         when built with -DCONV_HAVE_CUDA_VARIANTS
 //
 // Exit status: 0 if every check passes, 1 if any fails, 2 on bad usage.
 
@@ -26,7 +31,8 @@
 #include "conv2d.h"
 #include "utils.h"
 
-#ifdef CONV_HAVE_OMP
+#if defined(CONV_HAVE_OMP) || defined(CONV_HAVE_OMP_SIMD) || defined(CONV_HAVE_OMP_BLOCKED)
+#define CONV_HAVE_ANY_OMP
 #include <omp.h>
 #endif
 
@@ -59,22 +65,48 @@ struct Impl {
 std::vector<Impl> all_impls() {
     std::vector<Impl> v;
     v.push_back({"seq", conv2d_seq, [] {}, false});
+#ifdef CONV_HAVE_ANY_OMP
+    // Every OpenMP version runs under every schedule and thread count. An odd
+    // thread count gives uneven row splits; dynamic and guided scheduling
+    // shuffle which thread gets which rows.
+    //
+    // In every version each pixel is summed by one thread in seq's order, so
+    // the result must be identical to seq, not merely close. The exception:
+    // when FMA instructions are enabled (e.g. -march=native), GCC fuses the
+    // vectorized loops of omp_simd and omp_blocked differently from seq's
+    // loop, so those two then only have to meet the error bound.
+#ifdef __FMA__
+    const bool vector_bitwise = false;
+#else
+    const bool vector_bitwise = true;
+#endif
+    const struct { const char* name; ConvFn fn; bool bitwise; } omps[] = {
 #ifdef CONV_HAVE_OMP
-    // Each pixel is still summed by one thread in seq's order, so the
-    // result must be identical to seq, not merely close. An odd thread
-    // count gives uneven row splits; dynamic scheduling shuffles which
-    // thread gets which rows.
+        {"omp", conv2d_omp, true},
+#endif
+#ifdef CONV_HAVE_OMP_SIMD
+        {"omp_simd", conv2d_omp_simd, vector_bitwise},
+#endif
+#ifdef CONV_HAVE_OMP_BLOCKED
+        {"omp_blocked", conv2d_omp_blocked, vector_bitwise},
+#endif
+    };
+    (void)vector_bitwise;  // unused when only conv2d_omp is built
+
     std::vector<int> threads = {1, 2, 3};
     const int max_threads = omp_get_max_threads();
     if (max_threads > 3) threads.push_back(max_threads);
     const struct { const char* name; omp_sched_t kind; } scheds[] = {
-        {"static", omp_sched_static}, {"dynamic", omp_sched_dynamic}};
-    for (const auto& s : scheds) {
-        for (int t : threads) {
-            const omp_sched_t kind = s.kind;
-            v.push_back({fmt("omp/%s/t%d", s.name, t), conv2d_omp,
-                         [t, kind] { omp_set_num_threads(t); omp_set_schedule(kind, 0); },
-                         true});
+        {"static", omp_sched_static}, {"dynamic", omp_sched_dynamic},
+        {"guided", omp_sched_guided}};
+    for (const auto& o : omps) {
+        for (const auto& s : scheds) {
+            for (int t : threads) {
+                const omp_sched_t kind = s.kind;
+                v.push_back({fmt("%s/%s/t%d", o.name, s.name, t), o.fn,
+                             [t, kind] { omp_set_num_threads(t); omp_set_schedule(kind, 0); },
+                             o.bitwise});
+            }
         }
     }
 #endif
@@ -245,13 +277,13 @@ public:
     void record(size_t impl, const std::string& test, const std::string& err) {
         ++checks_[impl];
         if (err.empty()) {
-            if (verbose_) std::printf("   ok    %-20s %s\n", impls_[impl].name.c_str(), test.c_str());
+            if (verbose_) std::printf("   ok    %-24s %s\n", impls_[impl].name.c_str(), test.c_str());
             return;
         }
         ++fails_[impl];
         // Cap the output so one broken implementation doesn't bury everything else.
         if (++group_fails_[impl] <= kMaxPrinted)
-            std::printf("   FAIL  %-20s %s: %s\n", impls_[impl].name.c_str(),
+            std::printf("   FAIL  %-24s %s: %s\n", impls_[impl].name.c_str(),
                         test.c_str(), err.c_str());
     }
 
@@ -269,10 +301,10 @@ public:
     // Prints the summary; returns true if everything passed.
     bool finish() {
         end_group();
-        std::printf("\n%-20s %8s %8s\n", "implementation", "checks", "failed");
+        std::printf("\n%-24s %8s %8s\n", "implementation", "checks", "failed");
         int total_fails = 0;
         for (size_t i = 0; i < impls_.size(); ++i) {
-            std::printf("%-20s %8d %8d\n", impls_[i].name.c_str(), checks_[i], fails_[i]);
+            std::printf("%-24s %8d %8d\n", impls_[i].name.c_str(), checks_[i], fails_[i]);
             total_fails += fails_[i];
         }
         std::printf("\n%s\n", total_fails ? "FAILED" : "ALL PASSED");
@@ -286,7 +318,7 @@ private:
         if (group_.empty()) return;
         for (size_t i = 0; i < impls_.size(); ++i)
             if (group_fails_[i] > kMaxPrinted)
-                std::printf("   ...   %-20s %d more failures in this group\n",
+                std::printf("   ...   %-24s %d more failures in this group\n",
                             impls_[i].name.c_str(), group_fails_[i] - kMaxPrinted);
         group_.clear();
     }

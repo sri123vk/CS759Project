@@ -2,13 +2,21 @@
 #SBATCH --job-name=conv_test
 #SBATCH --partition=instruction
 #SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
 #SBATCH --gpus-per-task=1
 #SBATCH --time=00:15:00
 #SBATCH --output=conv_test_%j.out
 
 set -euo pipefail
 
-cd /srv/home/rangrej/CS759Project
+cd "${SLURM_SUBMIT_DIR:?SLURM_SUBMIT_DIR is not set}"
+
+# Check each OpenMP implementation with one thread and a static schedule.
+# The benchmark below explores multiple thread counts and schedules.
+for impl in omp omp_simd omp_blocked; do
+    echo "Testing $impl"
+    OMP_NUM_THREADS=1 srun ./bin/test_conv --impl "$impl/static/t1"
+done
 
 # Run the C++ correctness tests for each CUDA function.
 echo "Testing conv2d_cuda"

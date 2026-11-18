@@ -10,11 +10,18 @@
 void conv2d_seq(const float* in, float* out, const float* k,
                 int H, int W, int K);
 
-// OpenMP version. Thread count and schedule come from the usual OpenMP
-// controls (OMP_NUM_THREADS / OMP_SCHEDULE or omp_set_*), since the loop
-// uses schedule(runtime).
+// OpenMP versions use OMP_NUM_THREADS / OMP_SCHEDULE (or omp_set_*) for
+// their row-parallel loops with schedule(runtime).
 void conv2d_omp(const float* in, float* out, const float* k,
                 int H, int W, int K);
+
+// SIMD across output columns for each filter tap.
+void conv2d_omp_simd(const float* in, float* out, const float* k,
+                     int H, int W, int K);
+
+// SIMD across blocks of output columns, retaining block-local sums.
+void conv2d_omp_blocked(const float* in, float* out, const float* k,
+                        int H, int W, int K);
 
 //optimized version for the large size matrices
 //image rectangle shape handled

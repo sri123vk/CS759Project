@@ -19,7 +19,7 @@
 # the omp sweep, names starting with "cuda" through the cuda_blocks sweep.
 #
 # Settings (environment variables, defaults in brackets):
-#   IMPLS        ["seq omp cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout ..."]
+#   IMPLS        ["seq omp omp_simd omp_blocked cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout ..."]
 #                names the driver doesn't know are skipped
 #   SIZES        ["256 512 1024 2048"]        KS ["3 5 7"]   (proposal)
 #   OMP_SIZES    ["512 2048"]   OMP_KS ["3 7"]   THREADS [1 2 4 ... nproc]
@@ -52,6 +52,10 @@ done
 [[ " ${EXPS[*]} " == *" all "* ]] && EXPS=(baseline omp cuda_blocks torch)
 
 NPROC=$(nproc 2>/dev/null || echo 4)
+# Respect both the CPUs visible to this process and the Slurm allocation.
+if [[ ${SLURM_CPUS_PER_TASK:-} =~ ^[1-9][0-9]*$ ]] && ((NPROC > SLURM_CPUS_PER_TASK)); then
+    NPROC=$SLURM_CPUS_PER_TASK
+fi
 pow2_threads() {
     local t=1 out=""
     while ((t < NPROC)); do out+="$t "; t=$((t * 2)); done
@@ -63,7 +67,7 @@ if ((QUICK)); then
     : "${BLOCK_SIZES:=1024}" "${BLOCK_KS:=3}" "${BLOCKS:=32x8 16x16 128x1 1x128}"
     : "${SCHEDULES:=static dynamic}" "${ITERS:=5}"
 fi
-IMPLS=${IMPLS:-"seq omp cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout omp_simd omp_blocked cuda_tiled cuda_tiled_mo"}
+IMPLS=${IMPLS:-"seq omp omp_simd omp_blocked cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout cuda_tiled cuda_tiled_mo"}
 SIZES=${SIZES:-"256 512 1024 2048"}
 KS=${KS:-"3 5 7"}
 OMP_SIZES=${OMP_SIZES:-"512 2048"}
@@ -91,11 +95,19 @@ ERRLOG=$OUT/errors.log
 
 # Which implementations does this build of the driver accept?
 AVAILABLE=()
+SKIPPED=()
 for i in $IMPLS; do
-    "$CONV" --impl "$i" --size 16 --K 3 --iters 1 --warmup 0 >/dev/null 2>&1 && AVAILABLE+=("$i")
+    if "$CONV" --impl "$i" --size 16 --K 3 --iters 1 --warmup 0 >/dev/null 2>&1; then
+        AVAILABLE+=("$i")
+    else
+        SKIPPED+=("$i")
+    fi
 done
 ((${#AVAILABLE[@]})) || { echo "error: $CONV accepts none of: $IMPLS" >&2; exit 1; }
 echo "implementations: ${AVAILABLE[*]}" | tee "$OUT/implementations.txt" >&2
+if ((${#SKIPPED[@]})); then
+    echo "unavailable/skipped: ${SKIPPED[*]}" >&2
+fi
 impls_matching() { local i; for i in "${AVAILABLE[@]}"; do [[ $i == $1 ]] && echo "$i"; done; }
 
 iters_for() {  # more samples for short runs

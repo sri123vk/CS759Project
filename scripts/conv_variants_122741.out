@@ -1,0 +1,400 @@
+Project directory: /srv/home/rangrej/CS759Project_cuda_variant
+Building bin/conv and bin/test_conv
+make: 'bin/conv' is up to date.
+make: 'bin/test_conv' is up to date.
+Test executable: /srv/home/rangrej/CS759Project_cuda_variant/bin/test_conv
+Testing omp
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation             checks   failed
+omp/static/t1                 285        0
+
+ALL PASSED
+Testing omp_simd
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation             checks   failed
+omp_simd/static/t1            285        0
+
+ALL PASSED
+Testing omp_blocked
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation             checks   failed
+omp_blocked/static/t1         285        0
+
+ALL PASSED
+Confirming the existing shared-memory path
+cuda_opt: shared tile, block=32x8, K=7, shared=2128 bytes
+impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass
+cuda_opt,33,65,7,32,8,1,1.1137,1.1137,0.0327,0.0348,0.0154,0.1791,9.537e-07,6.126e-05,1.518e-02,0,1
+Testing cuda with partial blocks
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation             checks   failed
+cuda/7x3                      285        0
+
+ALL PASSED
+Testing cuda_opt with partial blocks
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation             checks   failed
+cuda_opt/7x3                  285        0
+
+ALL PASSED
+Testing cuda_const with partial blocks
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation             checks   failed
+cuda_const/7x3                285        0
+
+ALL PASSED
+Testing cuda_tiled_const with partial blocks
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation             checks   failed
+cuda_tiled_const/7x3          285        0
+
+ALL PASSED
+Testing cuda_multiout with partial blocks
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation             checks   failed
+cuda_multiout/7x3             285        0
+
+ALL PASSED
+implementations: seq omp omp_simd omp_blocked cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout
+results -> results/cuda_variants_122741
+== baseline
+  --impl seq --size 1024 --K 3 --iters 10 t=1                    8.6548 ms
+  --impl seq --size 1024 --K 7 --iters 10 t=1                   31.9548 ms
+  --impl seq --size 2048 --K 3 --iters 10 t=1                   34.9787 ms
+  --impl seq --size 2048 --K 7 --iters 10 t=1                  128.0364 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=8 static             2.1839 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=8 static             6.3753 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=8 static             8.6802 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=8 static            25.5401 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=8 static        0.1514 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=8 static        0.7265 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=8 static        0.6438 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=8 static        3.3325 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=8 static     0.2234 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=8 static     0.8213 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=8 static     0.7234 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=8 static     2.9224 ms
+  --impl cuda --size 1024 --K 3 --iters 10 --block 32 8          0.4415 ms
+  --impl cuda --size 1024 --K 7 --iters 10 --block 32 8          0.4782 ms
+  --impl cuda --size 2048 --K 3 --iters 10 --block 32 8          1.5209 ms
+  --impl cuda --size 2048 --K 7 --iters 10 --block 32 8          1.6709 ms
+  --impl cuda_opt --size 1024 --K 3 --iters 10 --block 32 8      0.4442 ms
+  --impl cuda_opt --size 1024 --K 7 --iters 10 --block 32 8      0.4985 ms
+  --impl cuda_opt --size 2048 --K 3 --iters 10 --block 32 8      1.4947 ms
+  --impl cuda_opt --size 2048 --K 7 --iters 10 --block 32 8      1.6864 ms
+  --impl cuda_const --size 1024 --K 3 --iters 10 --block 32 8      0.4411 ms
+  --impl cuda_const --size 1024 --K 7 --iters 10 --block 32 8      0.4822 ms
+  --impl cuda_const --size 2048 --K 3 --iters 10 --block 32 8      1.4414 ms
+  --impl cuda_const --size 2048 --K 7 --iters 10 --block 32 8      1.6000 ms
+  --impl cuda_tiled_const --size 1024 --K 3 --iters 10 --block 32 8      0.4416 ms
+  --impl cuda_tiled_const --size 1024 --K 7 --iters 10 --block 32 8      0.4811 ms
+  --impl cuda_tiled_const --size 2048 --K 3 --iters 10 --block 32 8      1.4665 ms
+  --impl cuda_tiled_const --size 2048 --K 7 --iters 10 --block 32 8      1.5866 ms
+  --impl cuda_multiout --size 1024 --K 3 --iters 10 --block 32 8      0.4190 ms
+  --impl cuda_multiout --size 1024 --K 7 --iters 10 --block 32 8      0.4860 ms
+  --impl cuda_multiout --size 2048 --K 3 --iters 10 --block 32 8      1.4253 ms
+  --impl cuda_multiout --size 2048 --K 7 --iters 10 --block 32 8      1.6185 ms
+   (12 s)
+== omp
+  --impl seq --size 1024 --K 3 --iters 10 t=1                    8.6808 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=1 static             8.7756 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=2 static             4.3953 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=4 static             2.2006 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=8 static             2.1926 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=1 dynamic            8.6989 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=2 dynamic            5.1617 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=4 dynamic            3.0823 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=8 dynamic            2.4643 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=1 guided             8.6589 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=2 guided             4.3658 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=4 guided             2.2007 ms
+  --impl omp --size 1024 --K 3 --iters 10 t=8 guided             2.1982 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=1 static        0.6139 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=2 static        0.3061 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=4 static        0.1588 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=8 static        0.1530 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=1 dynamic       0.6201 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=2 dynamic       1.0560 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=4 dynamic       0.7393 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=8 dynamic       0.5173 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=1 guided        0.5978 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=2 guided        0.3066 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=4 guided        0.1938 ms
+  --impl omp_simd --size 1024 --K 3 --iters 10 t=8 guided        0.1933 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=1 static     0.9023 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=2 static     0.4620 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=4 static     0.2381 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=8 static     0.2239 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=1 dynamic     0.9101 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=2 dynamic     0.8070 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=4 dynamic     0.6394 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=8 dynamic     0.4257 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=1 guided     0.9078 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=2 guided     0.4623 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=4 guided     0.2446 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 10 t=8 guided     0.2295 ms
+  --impl seq --size 1024 --K 7 --iters 10 t=1                   31.8950 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=1 static            31.9063 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=2 static            15.9832 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=4 static             8.0083 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=8 static             6.3508 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=1 dynamic           31.7949 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=2 dynamic           16.7602 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=4 dynamic            8.7608 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=8 dynamic            6.5366 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=1 guided            31.8045 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=2 guided            16.0367 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=4 guided             8.2145 ms
+  --impl omp --size 1024 --K 7 --iters 10 t=8 guided             6.2613 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=1 static        2.9829 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=2 static        1.5049 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=4 static        0.7593 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=8 static        0.7236 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=1 dynamic       3.0026 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=2 dynamic       3.8033 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=4 dynamic       2.4934 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=8 dynamic       2.2194 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=1 guided        3.0282 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=2 guided        1.5306 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=4 guided        0.7836 ms
+  --impl omp_simd --size 1024 --K 7 --iters 10 t=8 guided        0.7764 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=1 static     4.6244 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=2 static     2.3260 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=4 static     1.1776 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=8 static     0.8502 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=1 dynamic     4.6510 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=2 dynamic     3.1188 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=4 dynamic     1.6709 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=8 dynamic     0.9910 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=1 guided     4.6149 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=2 guided     2.3458 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=4 guided     1.1796 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 10 t=8 guided     0.8141 ms
+  --impl seq --size 2048 --K 3 --iters 10 t=1                   34.6451 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=1 static            34.7186 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=2 static            17.4998 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=4 static             9.0702 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=8 static             8.6843 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=1 dynamic           35.1687 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=2 dynamic           19.7880 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=4 dynamic           10.5677 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=8 dynamic            9.3170 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=1 guided            34.7240 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=2 guided            18.1783 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=4 guided             9.2790 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=8 guided             8.9591 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=1 static        2.8379 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=2 static        1.2288 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=4 static        0.5992 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=8 static        0.6552 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=1 dynamic       2.8322 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=2 dynamic       3.2138 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=4 dynamic       2.1625 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=8 dynamic       1.8672 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=1 guided        2.8133 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=2 guided        1.4708 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=4 guided        0.7912 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=8 guided        0.8215 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=1 static     3.1948 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=2 static     1.5905 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=4 static     0.8093 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=8 static     0.7211 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=1 dynamic     3.2282 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=2 dynamic     2.6991 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=4 dynamic     1.9743 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=8 dynamic     1.3435 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=1 guided     3.2336 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=2 guided     1.6375 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=4 guided     0.8997 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=8 guided     0.7525 ms
+  --impl seq --size 2048 --K 7 --iters 10 t=1                  128.0154 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=1 static           127.5650 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=2 static            63.8601 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=4 static            32.4926 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=8 static            25.3927 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=1 dynamic          127.4090 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=2 dynamic           66.2187 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=4 dynamic           33.9775 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=8 dynamic           25.4675 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=1 guided           127.5469 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=2 guided            63.5100 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=4 guided            33.1925 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=8 guided            25.1634 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=1 static       12.5792 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=2 static        5.8273 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=4 static        3.0338 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=8 static        3.3521 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=1 dynamic      12.5291 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=2 dynamic      13.7043 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=4 dynamic       7.6836 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=8 dynamic       7.4013 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=1 guided       11.8502 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=2 guided        6.3542 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=4 guided        3.1818 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=8 guided        3.4505 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=1 static    17.2822 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=2 static     8.6287 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=4 static     4.3384 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=8 static     2.9287 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=1 dynamic    17.3112 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=2 dynamic    10.1401 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=4 dynamic     5.4753 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=8 dynamic     3.3008 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=1 guided    17.2119 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=2 guided     8.6476 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=4 guided     4.4480 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=8 guided     2.9169 ms
+   (41 s)
+== cuda_blocks
+  --impl cuda --size 1024 --K 3 --block 32 8 --iters 10          0.4415 ms
+  --impl cuda --size 1024 --K 3 --block 32 16 --iters 10         0.4397 ms
+  --impl cuda --size 1024 --K 3 --block 16 16 --iters 10         0.4284 ms
+  --impl cuda --size 1024 --K 3 --block 8 8 --iters 10           0.4614 ms
+  --impl cuda --size 1024 --K 3 --block 1 128 --iters 10         0.5708 ms
+  --impl cuda --size 1024 --K 7 --block 32 8 --iters 10          0.4766 ms
+  --impl cuda --size 1024 --K 7 --block 32 16 --iters 10         0.5061 ms
+  --impl cuda --size 1024 --K 7 --block 16 16 --iters 10         0.4941 ms
+  --impl cuda --size 1024 --K 7 --block 8 8 --iters 10           0.5098 ms
+  --impl cuda --size 1024 --K 7 --block 1 128 --iters 10         1.0897 ms
+  --impl cuda --size 2048 --K 3 --block 32 8 --iters 10          1.5564 ms
+  --impl cuda --size 2048 --K 3 --block 32 16 --iters 10         1.4885 ms
+  --impl cuda --size 2048 --K 3 --block 16 16 --iters 10         1.4704 ms
+  --impl cuda --size 2048 --K 3 --block 8 8 --iters 10           1.4876 ms
+  --impl cuda --size 2048 --K 3 --block 1 128 --iters 10         2.0153 ms
+  --impl cuda --size 2048 --K 7 --block 32 8 --iters 10          1.6878 ms
+  --impl cuda --size 2048 --K 7 --block 32 16 --iters 10         1.6971 ms
+  --impl cuda --size 2048 --K 7 --block 16 16 --iters 10         1.6914 ms
+  --impl cuda --size 2048 --K 7 --block 8 8 --iters 10           1.7162 ms
+  --impl cuda --size 2048 --K 7 --block 1 128 --iters 10         4.0198 ms
+  --impl cuda_opt --size 1024 --K 3 --block 32 8 --iters 10      0.4408 ms
+  --impl cuda_opt --size 1024 --K 3 --block 32 16 --iters 10      0.4322 ms
+  --impl cuda_opt --size 1024 --K 3 --block 16 16 --iters 10      0.4701 ms
+  --impl cuda_opt --size 1024 --K 3 --block 8 8 --iters 10       0.4674 ms
+  --impl cuda_opt --size 1024 --K 3 --block 1 128 --iters 10      0.5306 ms
+  --impl cuda_opt --size 1024 --K 7 --block 32 8 --iters 10      0.4958 ms
+  --impl cuda_opt --size 1024 --K 7 --block 32 16 --iters 10      0.5035 ms
+  --impl cuda_opt --size 1024 --K 7 --block 16 16 --iters 10      0.4917 ms
+  --impl cuda_opt --size 1024 --K 7 --block 8 8 --iters 10       0.4872 ms
+  --impl cuda_opt --size 1024 --K 7 --block 1 128 --iters 10      0.5726 ms
+  --impl cuda_opt --size 2048 --K 3 --block 32 8 --iters 10      1.5137 ms
+  --impl cuda_opt --size 2048 --K 3 --block 32 16 --iters 10      1.5419 ms
+  --impl cuda_opt --size 2048 --K 3 --block 16 16 --iters 10      1.5350 ms
+  --impl cuda_opt --size 2048 --K 3 --block 8 8 --iters 10       1.5410 ms
+  --impl cuda_opt --size 2048 --K 3 --block 1 128 --iters 10      1.8563 ms
+  --impl cuda_opt --size 2048 --K 7 --block 32 8 --iters 10      1.6751 ms
+  --impl cuda_opt --size 2048 --K 7 --block 32 16 --iters 10      1.6862 ms
+  --impl cuda_opt --size 2048 --K 7 --block 16 16 --iters 10      1.7599 ms
+  --impl cuda_opt --size 2048 --K 7 --block 8 8 --iters 10       1.7196 ms
+  --impl cuda_opt --size 2048 --K 7 --block 1 128 --iters 10      2.0760 ms
+  --impl cuda_const --size 1024 --K 3 --block 32 8 --iters 10      0.4317 ms
+  --impl cuda_const --size 1024 --K 3 --block 32 16 --iters 10      0.4425 ms
+  --impl cuda_const --size 1024 --K 3 --block 16 16 --iters 10      0.4322 ms
+  --impl cuda_const --size 1024 --K 3 --block 8 8 --iters 10      0.4322 ms
+  --impl cuda_const --size 1024 --K 3 --block 1 128 --iters 10      0.5576 ms
+  --impl cuda_const --size 1024 --K 7 --block 32 8 --iters 10      0.4794 ms
+  --impl cuda_const --size 1024 --K 7 --block 32 16 --iters 10      0.4735 ms
+  --impl cuda_const --size 1024 --K 7 --block 16 16 --iters 10      0.4718 ms
+  --impl cuda_const --size 1024 --K 7 --block 8 8 --iters 10      0.5107 ms
+  --impl cuda_const --size 1024 --K 7 --block 1 128 --iters 10      1.1046 ms
+  --impl cuda_const --size 2048 --K 3 --block 32 8 --iters 10      1.4572 ms
+  --impl cuda_const --size 2048 --K 3 --block 32 16 --iters 10      1.6367 ms
+  --impl cuda_const --size 2048 --K 3 --block 16 16 --iters 10      1.4763 ms
+  --impl cuda_const --size 2048 --K 3 --block 8 8 --iters 10      1.5043 ms
+  --impl cuda_const --size 2048 --K 3 --block 1 128 --iters 10      2.0465 ms
+  --impl cuda_const --size 2048 --K 7 --block 32 8 --iters 10      1.6153 ms
+  --impl cuda_const --size 2048 --K 7 --block 32 16 --iters 10      1.6481 ms
+  --impl cuda_const --size 2048 --K 7 --block 16 16 --iters 10      1.6104 ms
+  --impl cuda_const --size 2048 --K 7 --block 8 8 --iters 10      1.8411 ms
+  --impl cuda_const --size 2048 --K 7 --block 1 128 --iters 10      4.1492 ms
+  --impl cuda_tiled_const --size 1024 --K 3 --block 32 8 --iters 10      0.4458 ms
+  --impl cuda_tiled_const --size 1024 --K 3 --block 32 16 --iters 10      0.4651 ms
+  --impl cuda_tiled_const --size 1024 --K 3 --block 16 16 --iters 10      0.4425 ms
+  --impl cuda_tiled_const --size 1024 --K 3 --block 8 8 --iters 10      0.4526 ms
+  --impl cuda_tiled_const --size 1024 --K 3 --block 1 128 --iters 10      0.5138 ms
+  --impl cuda_tiled_const --size 1024 --K 7 --block 32 8 --iters 10      0.4755 ms
+  --impl cuda_tiled_const --size 1024 --K 7 --block 32 16 --iters 10      0.4613 ms
+  --impl cuda_tiled_const --size 1024 --K 7 --block 16 16 --iters 10      0.4806 ms
+  --impl cuda_tiled_const --size 1024 --K 7 --block 8 8 --iters 10      0.4743 ms
+  --impl cuda_tiled_const --size 1024 --K 7 --block 1 128 --iters 10      0.5785 ms
+  --impl cuda_tiled_const --size 2048 --K 3 --block 32 8 --iters 10      1.4765 ms
+  --impl cuda_tiled_const --size 2048 --K 3 --block 32 16 --iters 10      1.4862 ms
+  --impl cuda_tiled_const --size 2048 --K 3 --block 16 16 --iters 10      1.4730 ms
+  --impl cuda_tiled_const --size 2048 --K 3 --block 8 8 --iters 10      1.7381 ms
+  --impl cuda_tiled_const --size 2048 --K 3 --block 1 128 --iters 10      1.8646 ms
+  --impl cuda_tiled_const --size 2048 --K 7 --block 32 8 --iters 10      1.8157 ms
+  --impl cuda_tiled_const --size 2048 --K 7 --block 32 16 --iters 10      1.7303 ms
+  --impl cuda_tiled_const --size 2048 --K 7 --block 16 16 --iters 10      1.6015 ms
+  --impl cuda_tiled_const --size 2048 --K 7 --block 8 8 --iters 10      1.6277 ms
+  --impl cuda_tiled_const --size 2048 --K 7 --block 1 128 --iters 10      2.0385 ms
+  --impl cuda_multiout --size 1024 --K 3 --block 32 8 --iters 10      0.4404 ms
+  --impl cuda_multiout --size 1024 --K 3 --block 32 16 --iters 10      0.4345 ms
+  --impl cuda_multiout --size 1024 --K 3 --block 16 16 --iters 10      0.4435 ms
+  --impl cuda_multiout --size 1024 --K 3 --block 8 8 --iters 10      0.4800 ms
+  --impl cuda_multiout --size 1024 --K 3 --block 1 128 --iters 10      0.5439 ms
+  --impl cuda_multiout --size 1024 --K 7 --block 32 8 --iters 10      0.4947 ms
+  --impl cuda_multiout --size 1024 --K 7 --block 32 16 --iters 10      0.4752 ms
+  --impl cuda_multiout --size 1024 --K 7 --block 16 16 --iters 10      0.4735 ms
+  --impl cuda_multiout --size 1024 --K 7 --block 8 8 --iters 10      0.5103 ms
+  --impl cuda_multiout --size 1024 --K 7 --block 1 128 --iters 10      0.9446 ms
+  --impl cuda_multiout --size 2048 --K 3 --block 32 8 --iters 10      1.5272 ms
+  --impl cuda_multiout --size 2048 --K 3 --block 32 16 --iters 10      1.4237 ms
+  --impl cuda_multiout --size 2048 --K 3 --block 16 16 --iters 10      1.4242 ms
+  --impl cuda_multiout --size 2048 --K 3 --block 8 8 --iters 10      1.4433 ms
+  --impl cuda_multiout --size 2048 --K 3 --block 1 128 --iters 10      1.8855 ms
+  --impl cuda_multiout --size 2048 --K 7 --block 32 8 --iters 10      1.6288 ms
+  --impl cuda_multiout --size 2048 --K 7 --block 32 16 --iters 10      1.6021 ms
+  --impl cuda_multiout --size 2048 --K 7 --block 16 16 --iters 10      1.6220 ms
+  --impl cuda_multiout --size 2048 --K 7 --block 8 8 --iters 10      1.7371 ms
+  --impl cuda_multiout --size 2048 --K 7 --block 1 128 --iters 10      3.5167 ms
+   (38 s)
+done: 284 ok, 0 check failures, 0 errors -> results/cuda_variants_122741
+Results: results/cuda_variants_122741
+implementations: seq omp omp_simd omp_blocked cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout
