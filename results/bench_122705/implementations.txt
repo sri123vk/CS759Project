@@ -1,0 +1,1 @@
+implementations: seq omp cuda cuda_opt omp_simd omp_blocked
