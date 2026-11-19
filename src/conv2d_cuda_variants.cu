@@ -3,7 +3,10 @@
 //
 // cuda_const:       one output per thread, filter in constant memory.
 // cuda_tiled_const: shared input tile plus constant-memory filter.
-// cuda_multiout:    two outputs per thread, filter in global memory.
+// cuda_multiout:             two outputs per thread, global image and filter.
+// cuda_multiout_const:       two outputs per thread, constant-memory filter.
+// cuda_multiout_tiled:       two outputs per thread, shared-memory image tile.
+// cuda_multiout_tiled_const: two outputs per thread, shared tile and constant filter.
 //
 // Constant-memory symbols are shared by launches in a CUDA context. A mutex
 // protects uploads and launches through this file from concurrent callers.
@@ -174,6 +177,129 @@ __global__ void conv2d_variant_multiout(
     if (have_second) output[row * W + col1] = sum1;
 }
 
+// Compile separate kernels for the requested combinations. Each thread uses
+// one coefficient for two accumulators; this is an independent optimization
+// from shared image tiles and constant-memory filter coefficients.
+template <bool UseConstant>
+__device__ __forceinline__ float multiout_weight(const float* filter, int index) {
+    if constexpr (UseConstant) {
+        return g_variant_filter[index];
+    } else {
+        return filter[index];
+    }
+}
+
+template <bool UseShared, bool UseConstant>
+__global__ void conv2d_variant_multiout_combined(
+    const float* image, float* output, const float* filter, int H, int W, int K
+) {
+    extern __shared__ float tile[];
+    const int bx = static_cast<int>(blockDim.x);
+    const int by = static_cast<int>(blockDim.y);
+    const int tx = static_cast<int>(threadIdx.x);
+    const int ty = static_cast<int>(threadIdx.y);
+    const int radius = K / 2;
+    const int base_y = static_cast<int>(blockIdx.y * blockDim.y);
+    const int base_x = static_cast<int>(blockIdx.x * (2U * blockDim.x));
+    const int tile_width = 2 * bx + K - 1;
+
+    if constexpr (UseShared) {
+        // A block produces 2*bx by by outputs. Load its entire input tile,
+        // including both halos. Every thread helps, including threads whose
+        // output positions are outside the image in a partial edge block.
+        const int tile_height = by + K - 1;
+        for (int tile_y = ty; tile_y < tile_height; tile_y += by) {
+            const int y = base_y + tile_y - radius;
+            for (int tile_x = tx; tile_x < tile_width; tile_x += bx) {
+                const int x = base_x + tile_x - radius;
+                tile[tile_y * tile_width + tile_x] =
+                    y >= 0 && y < H && x >= 0 && x < W
+                    ? image[y * W + x] : 0.0f;
+            }
+        }
+        __syncthreads();
+    }
+
+    const int row = base_y + ty;
+    const int col0 = base_x + tx;
+    const int col1 = col0 + bx;
+    // In the shared variants, this check must remain after the barrier.
+    if (row >= H || col0 >= W) return;
+
+    const bool have_second = col1 < W;
+    const bool interior = have_second && row >= radius && row + radius < H &&
+                          col0 >= radius && col1 + radius < W;
+    float sum0 = 0.0f;
+    float sum1 = 0.0f;
+
+    if (interior) {
+        for (int i = 0; i < K; ++i) {
+            const float* in0;
+            const float* in1;
+            if constexpr (UseShared) {
+                in0 = tile + (ty + i) * tile_width + tx;
+                in1 = in0 + bx;
+            } else {
+                const int y = row + i - radius;
+                in0 = image + y * W + col0 - radius;
+                in1 = image + y * W + col1 - radius;
+            }
+            for (int j = 0; j < K; ++j) {
+                const float coefficient = multiout_weight<UseConstant>(filter, i * K + j);
+                sum0 += in0[j] * coefficient;
+                sum1 += in1[j] * coefficient;
+            }
+        }
+    } else {
+        // Match the direct implementation: invalid image taps are skipped,
+        // not multiplied by padding zeros (important for NaN/Inf weights).
+        for (int i = 0; i < K; ++i) {
+            const int y = row + i - radius;
+            if (y < 0 || y >= H) continue;
+            for (int j = 0; j < K; ++j) {
+                const int x0 = col0 + j - radius;
+                const int x1 = col1 + j - radius;
+                const bool valid0 = x0 >= 0 && x0 < W;
+                const bool valid1 = have_second && x1 >= 0 && x1 < W;
+                if (valid0 || valid1) {
+                    const float coefficient = multiout_weight<UseConstant>(filter, i * K + j);
+                    if constexpr (UseShared) {
+                        const int tile_index = (ty + i) * tile_width + tx + j;
+                        if (valid0) sum0 += tile[tile_index] * coefficient;
+                        if (valid1) sum1 += tile[tile_index + bx] * coefficient;
+                    } else {
+                        if (valid0) sum0 += image[y * W + x0] * coefficient;
+                        if (valid1) sum1 += image[y * W + x1] * coefficient;
+                    }
+                }
+            }
+        }
+    }
+
+    output[row * W + col0] = sum0;
+    if (have_second) output[row * W + col1] = sum1;
+}
+
+bool is_multiout(CudaVariant variant) {
+    return variant == CudaVariant::MultiOutput ||
+           variant == CudaVariant::MultiOutputConstant ||
+           variant == CudaVariant::MultiOutputTiled ||
+           variant == CudaVariant::MultiOutputTiledConstant;
+}
+
+bool uses_shared_tile(CudaVariant variant) {
+    return variant == CudaVariant::TiledConstant ||
+           variant == CudaVariant::MultiOutputTiled ||
+           variant == CudaVariant::MultiOutputTiledConstant;
+}
+
+bool uses_constant_filter(CudaVariant variant) {
+    return variant == CudaVariant::Constant ||
+           variant == CudaVariant::TiledConstant ||
+           variant == CudaVariant::MultiOutputConstant ||
+           variant == CudaVariant::MultiOutputTiledConstant;
+}
+
 struct LaunchConfig {
     dim3 block;
     dim3 grid;
@@ -214,6 +340,18 @@ LaunchConfig get_launch_config(int H, int W, int K, int bx, int by,
         check_variant(cudaFuncGetAttributes(&attr, conv2d_variant_multiout),
                       "get multiple-output kernel properties");
         break;
+    case CudaVariant::MultiOutputConstant:
+        check_variant(cudaFuncGetAttributes(&attr, conv2d_variant_multiout_combined<false, true>),
+                      "get multiple-output constant kernel properties");
+        break;
+    case CudaVariant::MultiOutputTiled:
+        check_variant(cudaFuncGetAttributes(&attr, conv2d_variant_multiout_combined<true, false>),
+                      "get multiple-output tiled kernel properties");
+        break;
+    case CudaVariant::MultiOutputTiledConstant:
+        check_variant(cudaFuncGetAttributes(&attr, conv2d_variant_multiout_combined<true, true>),
+                      "get multiple-output tiled constant kernel properties");
+        break;
     default:
         throw std::invalid_argument("unknown CUDA variant");
     }
@@ -226,7 +364,7 @@ LaunchConfig get_launch_config(int H, int W, int K, int bx, int by,
     }
 
     const auto columns_per_block = static_cast<std::uint64_t>(bx) *
-        (variant == CudaVariant::MultiOutput ? 2 : 1);
+        (is_multiout(variant) ? 2 : 1);
     const auto grid_x = (static_cast<std::uint64_t>(W) + columns_per_block - 1)
                         / columns_per_block;
     const auto grid_y = (static_cast<std::uint64_t>(H) + by - 1) / by;
@@ -250,8 +388,8 @@ LaunchConfig get_launch_config(int H, int W, int K, int bx, int by,
     result.block = dim3(static_cast<unsigned>(bx), static_cast<unsigned>(by));
     result.grid = dim3(static_cast<unsigned>(grid_x), static_cast<unsigned>(grid_y));
 
-    if (variant == CudaVariant::TiledConstant) {
-        const auto tile_w = static_cast<std::uint64_t>(bx) + K - 1;
+    if (uses_shared_tile(variant)) {
+        const auto tile_w = columns_per_block + K - 1;
         const auto tile_h = static_cast<std::uint64_t>(by) + K - 1;
         const std::size_t available = prop.sharedMemPerBlock > attr.sharedSizeBytes
             ? prop.sharedMemPerBlock - attr.sharedSizeBytes : 0;
@@ -283,8 +421,7 @@ CudaTimes cuda_conv_run_variant(const CudaConv& c, const float* in, float* out,
     for (void* event : c.events) {
         if (!event) throw std::invalid_argument("CUDA events are not initialized");
     }
-    const bool uses_constant = variant == CudaVariant::Constant ||
-                               variant == CudaVariant::TiledConstant;
+    const bool uses_constant = uses_constant_filter(variant);
     const auto image_elements =
         static_cast<std::uint64_t>(c.H) * static_cast<std::uint64_t>(c.W);
     const auto filter_elements =
@@ -333,6 +470,18 @@ CudaTimes cuda_conv_run_variant(const CudaConv& c, const float* in, float* out,
             break;
         case CudaVariant::MultiOutput:
             conv2d_variant_multiout<<<launch.grid, launch.block>>>(
+                c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
+            break;
+        case CudaVariant::MultiOutputConstant:
+            conv2d_variant_multiout_combined<false, true><<<launch.grid, launch.block>>>(
+                c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
+            break;
+        case CudaVariant::MultiOutputTiled:
+            conv2d_variant_multiout_combined<true, false><<<launch.grid, launch.block, launch.shared_bytes>>>(
+                c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
+            break;
+        case CudaVariant::MultiOutputTiledConstant:
+            conv2d_variant_multiout_combined<true, true><<<launch.grid, launch.block, launch.shared_bytes>>>(
                 c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
             break;
         default:

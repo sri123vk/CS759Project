@@ -280,20 +280,49 @@ that file for errors. Sweep parameters
 counts) can be overridden with environment variables. See
 `scripts/bench.sh --help`.
 
-The plots need Python 3 with pandas and matplotlib. The `torch` experiment
+The plots need Python 3 with NumPy, pandas, and matplotlib. The `torch` experiment
 needs PyTorch and is skipped if it isn't installed. A CUDA-enabled PyTorch
 installation and GPU are needed for the GPU library comparison.
 
-For a focused `cuda` versus `cuda_opt` comparison, the comparison script reads
-the Slurm **output log** (not `cuda_blocks.csv`) and writes a PDF plus matched
-timing CSV:
+### Plot benchmark results
 
-```
-python3 scripts/plot_cuda_blocks.py conv_variants_JOBID.out -o plots/cuda_compare
+After the benchmark job completes, choose its results directory under
+`results/cuda_variants_<jobid>/`. It contains `baseline.csv`,
+`cuda_blocks.csv`, and, when the OpenMP sweep was run, `omp.csv`.
+Activate a Python environment with the plotting dependencies, then run:
+
+```bash
+cd /srv/home/rangrej/CS759Project
+
+results="results/cuda_variants_12345"
+
+python scripts/plot_cuda_blocks.py "$results" \
+    --metric kernel_ms -o plots/cuda_comparison
+
+python scripts/plot_cuda_blocks.py "$results" \
+    --metric median_ms -o plots/cuda_comparison
+
+python scripts/plot.py "$results" -o plots/project_report
 ```
 
-It compares the printed end-to-end medians. Use `kernel_ms` in the benchmark
-CSV or the general plots to compare kernel execution separately.
+Replace `/srv/home/rangrej/CS759Project` with your checkout path and `12345`
+with the actual job ID. For example, job `123777` writes to
+`results/cuda_variants_123777/`.
+
+The CUDA comparison script plots the CUDA implementations in the results
+and writes a PDF and comparison CSV for each metric:
+
+- `plots/cuda_comparison/cuda_kernel_comparison.pdf` and `.csv`: GPU kernel time.
+- `plots/cuda_comparison/cuda_median_comparison.pdf` and `.csv`: full-call time,
+  including transfers and host overhead.
+
+`plot.py` writes project-wide figures and `summary.md` to
+`plots/project_report/`. The plots depend on the available CSVs; for example,
+a cuDNN comparison is only produced if `torch.csv` is present.
+
+`plot_cuda_blocks.py` can also read a Slurm output log for `median_ms`.
+Use the benchmark CSVs for `kernel_ms`; the printed progress lines do not
+contain separate kernel timings.
 
 ## Status
 

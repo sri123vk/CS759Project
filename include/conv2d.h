@@ -85,7 +85,10 @@ CudaTimes cuda_conv_run_opt(const CudaConv& c, const float* in, float* out,
 enum class CudaVariant {
     Constant,        // one output per thread, constant-memory filter
     TiledConstant,   // shared-memory image tile, constant-memory filter
-    MultiOutput      // two outputs per thread, global-memory filter
+    MultiOutput,             // two outputs per thread, global-memory filter
+    MultiOutputConstant,     // two outputs per thread, constant-memory filter
+    MultiOutputTiled,         // two outputs per thread, shared-memory image
+    MultiOutputTiledConstant // two outputs per thread, shared image and constant filter
 };
 
 // Uses the same reusable buffers, host pointers, and event timings as

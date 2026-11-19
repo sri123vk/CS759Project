@@ -13,7 +13,8 @@
 //   omp_blocked/<schedule>/t<threads>     when built with -DCONV_HAVE_OMP_BLOCKED
 //   cuda/<bx>x<by>                        when built with -DCONV_HAVE_CUDA
 //   cuda_opt/<bx>x<by>                    when built with -DCONV_HAVE_CUDA_OPT
-//   cuda_const, cuda_tiled_const, cuda_multiout /<bx>x<by>
+//   cuda_const, cuda_tiled_const, cuda_multiout and the multiout combinations
+//   /<bx>x<by>
 //                                         when built with -DCONV_HAVE_CUDA_VARIANTS
 //
 // Exit status: 0 if every check passes, 1 if any fails, 2 on bad usage.
@@ -159,7 +160,10 @@ std::vector<Impl> all_impls() {
     const struct { const char* name; CudaVariant variant; } extra_variants[] = {
         {"cuda_const", CudaVariant::Constant},
         {"cuda_tiled_const", CudaVariant::TiledConstant},
-        {"cuda_multiout", CudaVariant::MultiOutput}
+        {"cuda_multiout", CudaVariant::MultiOutput},
+        {"cuda_multiout_const", CudaVariant::MultiOutputConstant},
+        {"cuda_multiout_tiled", CudaVariant::MultiOutputTiled},
+        {"cuda_multiout_tiled_const", CudaVariant::MultiOutputTiledConstant}
     };
     const int extra_blocks[][2] = {{32, 8}, {7, 3}};
     for (const auto& item : extra_variants) {

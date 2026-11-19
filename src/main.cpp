@@ -1,7 +1,9 @@
 // Benchmark driver.
 //
 // Usage:
-//   conv --impl seq|omp|omp_simd|omp_blocked|cuda|cuda_opt|cuda_const|cuda_tiled_const|cuda_multiout --size N [--K 3] [--iters 10] [--warmup 2]
+//   conv --impl NAME --size N [--K 3] [--iters 10] [--warmup 2]
+//   CUDA variants include cuda_multiout_const, cuda_multiout_tiled, and
+//   cuda_multiout_tiled_const, alongside the existing implementations.
 //        [--block BX BY|auto] [--check] [--dump DIR] [--header]
 //
 // Prints one CSV row per run (use --header to print the column names first).
@@ -43,7 +45,10 @@ struct Args {
 
 void usage(const char* prog) {
     std::fprintf(stderr,
-        "usage: %s --impl seq|omp|omp_simd|omp_blocked|cuda|cuda_opt|cuda_const|cuda_tiled_const|cuda_multiout --size N [--H h --W w] [--K k]\n"
+        "usage: %s --impl NAME --size N [--H h --W w] [--K k]\n"
+        "          CPU:  seq omp omp_simd omp_blocked\n"
+        "          CUDA: cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout\n"
+        "                cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const\n"
         "          [--iters n] [--warmup n] [--block bx by|auto]\n"
         "          [--check] [--dump dir] [--header]\n",
         prog);
@@ -90,7 +95,8 @@ Args parse(int argc, char** argv) {
 // report a useful error if CUDA was not compiled in.
 bool is_extra_cuda(const std::string& impl) {
     return impl == "cuda_const" || impl == "cuda_tiled_const" ||
-           impl == "cuda_multiout";
+           impl == "cuda_multiout" || impl == "cuda_multiout_const" ||
+           impl == "cuda_multiout_tiled" || impl == "cuda_multiout_tiled_const";
 }
 
 using ConvFn = void (*)(const float*, float*, const float*, int, int, int);
@@ -179,6 +185,12 @@ CudaTimes run_opt_or_variant(const std::string& impl, const CudaConv& c,
         return cuda_conv_run_variant(c, in, out, k, bx, by, CudaVariant::TiledConstant);
     if (impl == "cuda_multiout")
         return cuda_conv_run_variant(c, in, out, k, bx, by, CudaVariant::MultiOutput);
+    if (impl == "cuda_multiout_const")
+        return cuda_conv_run_variant(c, in, out, k, bx, by, CudaVariant::MultiOutputConstant);
+    if (impl == "cuda_multiout_tiled")
+        return cuda_conv_run_variant(c, in, out, k, bx, by, CudaVariant::MultiOutputTiled);
+    if (impl == "cuda_multiout_tiled_const")
+        return cuda_conv_run_variant(c, in, out, k, bx, by, CudaVariant::MultiOutputTiledConstant);
 #endif
     throw std::invalid_argument("unknown or unavailable CUDA variant: " + impl);
 }

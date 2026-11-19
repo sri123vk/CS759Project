@@ -44,6 +44,7 @@ fi
 expected_tests=(
     omp/static/t1 omp_simd/static/t1 omp_blocked/static/t1
     cuda/7x3 cuda_opt/7x3 cuda_const/7x3 cuda_tiled_const/7x3 cuda_multiout/7x3
+    cuda_multiout_const/7x3 cuda_multiout_tiled/7x3 cuda_multiout_tiled_const/7x3
 )
 check_test_names() {
     local test_list name missing=0
@@ -83,12 +84,13 @@ CONV_CUDA_TRACE=1 srun ./bin/conv --impl cuda_opt \
     --H 33 --W 65 --K 7 --block 32 8 \
     --warmup 0 --iters 1 --check --header
 
-for impl in cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout; do
+for impl in cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout \
+            cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const; do
     echo "Testing $impl with partial blocks"
     srun ./bin/test_conv --impl "$impl/7x3"
 done
 
-export IMPLS="seq omp omp_simd omp_blocked cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout"
+export IMPLS="seq omp omp_simd omp_blocked cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const"
 export SIZES="1024 2048"
 export KS="3 7"
 export OMP_SIZES="1024 2048"

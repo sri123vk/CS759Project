@@ -1,0 +1,304 @@
+# Performance Comparison of Sequential, OpenMP, and CUDA-Based 2D Convolution
+
+ECE 759 · Fall 2026 · Final Project
+
+**Team:** Srimathi Ravisankar, Kshitija Sunil Rangrej, Vanessa Bennett, Frey Wysong
+
+## Overview
+
+One 2D convolution, implemented three ways (sequential C++, OpenMP, CUDA)
+and benchmarked across image sizes 256²–2048² and filter sizes 3×3, 5×5, 7×7.
+We also study OpenMP thread count and scheduling, CUDA thread-block shape,
+shared-memory tiling, constant-memory filters, and multiple outputs per thread.
+
+## Specification
+
+Every implementation computes, with `R = K / 2`:
+
+```
+out[r][c] = Σᵢ Σⱼ k[i][j] · in[r+i−R][c+j−R]
+```
+
+| | |
+|---|---|
+| Operation | Cross-correlation (filter not flipped), as in image-processing and CNN libraries |
+| Precision | FP32 input, filter, output, and accumulator |
+| Layout | Row-major; pixel `(r, c)` at `in[r*W + c]` |
+| Filter | Square, positive odd `K`, centered; benchmarks commonly use 3, 5, and 7 |
+| Boundary | Zero padding; output is `H × W` |
+| Sum order | Filter row `i`, then column `j` |
+
+Common CPU and direct CUDA interface (`include/conv2d.h`):
+
+```cpp
+void conv2d_<variant>(const float* in, float* out, const float* k,
+                      int H, int W, int K);
+```
+
+The additional CUDA variants also use the staged CUDA interface declared in
+`include/conv2d.h`. Constant-memory variants support odd `K <= 63`.
+
+## Methodology
+
+**Inputs.** Uniform in [−1, 1] from fixed seeds. Exportable as raw float32 for
+Python cross-checks.
+
+**Correctness.** The compiled implementations are checked against hand-derived
+answers and an independent double-precision loop (`make test`). The separate
+`make validate` target checks selected shapes and implementations against
+`scipy.signal.correlate2d(in, k, mode="same", boundary="fill")` or PyTorch.
+By default, external validation selects `seq` and, when built, `cuda`; other
+variants can be included with `VALIDATE_IMPLS`.
+See [Tests](#tests). Pass: no NaN/Inf in the output, and at every pixel
+`|got − ref| ≤ 2·γ(K²)·Σ|k·in|` where `γ(n) = n·u / (1 − n·u)`, `u = 2⁻²⁴`.
+This is the standard FP32 dot-product error bound (Higham §3.1). It holds
+for any summation order, with or without FMA, so GPU results need not match
+bit-for-bit. The CSV reports `err_ratio` (worst error ÷ bound, pass ≤ 1);
+max absolute and relative error are reported for information only.
+
+**Timing.** Warm-up runs, then the median of N timed runs.
+
+- CPU: `std::chrono::steady_clock`
+- CUDA: the context is created and device memory allocated before timing
+  (allocation reported separately as `alloc_ms`). End-to-end time
+  (`median_ms`) is host wall-clock for host→device copy + kernel +
+  device→host copy. `h2d_ms`, `kernel_ms`, `d2h_ms` are per-stage
+  `cudaEvent` times (medians).
+
+For comparable results, run experiments on the same cluster node type and
+record the hardware and software configuration. Laptop timings are useful
+for development only.
+
+## Layout
+
+```
+include/      interface, timing, and I/O helpers
+src/          implementations and benchmark driver
+tests/        C++ correctness tests (make test)
+validation/   Python check against SciPy / PyTorch (make validate)
+scripts/      benchmark sweeps and Slurm jobs
+results/      raw CSV output and hardware info
+plots/        figures
+report/       final report
+```
+
+## Build and run
+
+```
+make                                         # builds bin/conv
+make -B CUDA=1 bin/conv bin/test_conv        # force a CUDA + OpenMP rebuild
+./bin/conv --impl seq --size 1024 --K 5 --header
+./bin/conv --impl cuda --size 2048 --K 7 --block 16 16 --check
+./bin/conv --impl cuda_opt --size 2048 --K 7 --block 32 8 --check
+```
+
+CUDA is built in automatically when `nvcc` is on the PATH (`make CUDA=0`
+to skip it). To target a specific GPU, e.g. `make NVCCFLAGS="-O3 -std=c++17 -arch=sm_75"`.
+Use `make -B` after changing build options because Make may not detect changes
+in flags. On Euler, load an appropriate CUDA module before building and run
+CUDA tests and benchmarks on a GPU compute node.
+
+Options: `--size N` (or `--H`, `--W`), `--K`, `--iters`, `--warmup`,
+`--block BX BY` (CUDA thread block, default 32 8), `--block auto`, `--check`, `--dump DIR`,
+`--header`. Output is one CSV row per run with columns
+`impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass`;
+CUDA-only columns are empty for CPU implementations.
+`--block auto` tries supported candidate shapes on the current workload and
+reports the selected shape and tuning time separately. Tuning is excluded from
+the reported benchmark times. `--check` must be specified for the `pass` field
+to represent a correctness comparison.
+
+CUDA implementations available through `--impl`:
+
+| Name | Implementation |
+|---|---|
+| `cuda` | Direct baseline; one output per thread. |
+| `cuda_opt` | Shared-memory input tiles with halos; falls back to its original kernel when tiling cannot be used. |
+| `cuda_const` | Direct kernel with filter coefficients in constant memory. |
+| `cuda_tiled_const` | Shared-memory input tiles and a constant-memory filter. |
+| `cuda_multiout` | Two outputs per thread with a global-memory filter. |
+
+Set `CONV_CUDA_TRACE=1` for a diagnostic run to see whether `cuda_opt` uses a
+shared tile or its fallback. Leave it unset when measuring performance.
+
+## Tests
+
+`make test` runs the unit tests and then the external check if NumPy and SciPy
+or NumPy and PyTorch are available.
+Run it after every change and before every benchmark sweep. There is no CI;
+the provided Euler benchmark job also runs the tests.
+
+```
+make test                                  # unit tests, then external check if dependencies are installed
+make test VALIDATE=1                       # require the external check
+make test VALIDATE=0                       # unit tests only (fast, for development)
+make validate                              # external check only
+./bin/test_conv --list                     # implementations compiled into the unit tests
+./bin/test_conv --impl cuda -v             # only names containing "cuda"; also print passes
+./bin/test_conv --impl cuda_opt/7x3        # test the optimized kernel with partial blocks
+./bin/test_conv --impl cuda_tiled_const/7x3
+./bin/conv --impl cuda --size 2048 --K 7 --check   # one run, compared with seq
+```
+
+If Python with numpy and scipy (or numpy and torch) isn't available,
+`make test` still passes on the unit tests alone and prints
+`*** SKIPPED: external check ...`. Don't treat that as a full pass.
+`VALIDATE=1` turns the skip into a failure.
+`--impl` matches a substring, so `--impl cuda` selects matching CUDA variants;
+use `--list --impl cuda` to see exactly what will run.
+
+There are three kinds of check:
+
+| Check | Compared against | Sizes | Command |
+|---|---|---|---|
+| Unit tests, `tests/test_conv.cpp` | Hand-derived answers, and a double-precision loop written separately in the test file | 1×1 to 1000×1000 | `make test` |
+| External check, `validation/validate.py` | SciPy `correlate2d` (or PyTorch `conv2d`) in float64 | 2048² and 1531×2777 by default | `make test`, or on its own `make validate` |
+| Driver `--check` | `conv2d_seq` | Any | `bin/conv ... --check` |
+
+### Unit tests (`make test`)
+
+Every test runs on every implementation that is compiled in:
+
+| Name | Built in when | Requirement |
+|---|---|---|
+| `seq` | Always | Within the error bound |
+| `omp`, `omp_simd`, `omp_blocked` with `static`, `dynamic`, or `guided` and multiple thread counts | Corresponding `src/conv2d_*.cpp` exists | Checked against the sequential and independent references |
+| `cuda/32x8` (the one-call `conv2d_cuda`), `cuda/8x8`, `16x16`, `32x32`, `128x1`, `1x256`, `7x3` | `nvcc` is on the PATH (`make CUDA=0` to skip) | Within the error bound (FMA changes the rounding). `7x3` leaves partial blocks along every edge |
+| `cuda_opt`, `cuda_const`, `cuda_tiled_const`, `cuda_multiout` with `32x8` or `7x3` | CUDA variants are compiled in | Within the error bound; `7x3` exercises partial blocks |
+
+The tests also check for some memory errors. The output buffer starts as NaN,
+so pixels that are never written fail. Guard values on both sides of the
+buffer catch out-of-bounds writes. The input and filter must be unchanged
+afterwards.
+
+| Group | Input | Expected output | Catches |
+|---|---|---|---|
+| identity | Center tap = 1, K = 1–7 | The input | Basic indexing |
+| shift | One tap = 1 at every filter position, non-square images | The input shifted, zeros filled in | Swapped rows/columns, off-by-one padding |
+| impulse | One pixel = 1, at the center and each corner | The filter rotated 180° | Convolution instead of cross-correlation, edge clipping |
+| ones | All-ones image and filter, including images smaller than the filter | Count of in-bounds taps | Zero-padding errors |
+| random | Uniform [−1, 1], 12 shapes (1×1, 1×17, 17×1, primes, 257×263, 1000×1000, …) × K = 1, 3, 5, 7 | Within the error bound of the double-precision loop | General arithmetic and indexing |
+| repeatability | 513×517, K = 7, run 3 times | Identical bits every run | Data races, reads of uninitialized memory |
+
+The hand-derived cases use only small integers and products with 0 or 1, so
+any implementation must reproduce them exactly whatever the summation order.
+The random cases use the error bound from [Methodology](#methodology).
+
+Exit status: 0 if every check passes, 1 if any fails, 2 for bad arguments.
+At most 5 failures are printed per implementation per group, and the summary
+table gives the totals.
+
+**Adding an implementation:** add an entry to `all_impls()` in
+`tests/test_conv.cpp` with a name, the function, an optional setup step run
+before each call, and whether the output must match `seq` bit for bit. Set
+that flag only if the implementation sums each pixel in `seq`'s order.
+
+### External check (part of `make test`; on its own, `make validate`)
+
+1. Runs `bin/conv --dump` once for each shape and implementation, writing
+   raw float32 files to `data/validate/` (gitignored, about 200 MB with the
+   defaults). Old `.bin` files there are deleted first.
+2. Runs `validation/validate.py data/validate`. It first checks the reference
+   library itself against known answers: single taps at every filter position,
+   and a random filter checked against a direct loop. A library that flips the
+   filter or centers its output differently stops the run there. Then every
+   output is compared with the library's float64 result using the same error
+   bound as the unit tests.
+
+Requirements: Python 3 with NumPy and SciPy, or NumPy and PyTorch. Without SciPy it uses PyTorch
+(`--ref torch`). Settings, all optional:
+
+```
+# VALIDATE_SHAPES: HxWxK; VALIDATE_IMPLS default: seq, plus cuda if built in
+make validate PYTHON=python3 \
+              VALIDATE_SHAPES="2048x2048x3 1531x2777x7" \
+              VALIDATE_IMPLS="seq cuda" \
+              VALIDATE_DIR=data/validate
+```
+
+To validate all five CUDA variants, set
+`VALIDATE_IMPLS="seq cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout"`
+on a GPU compute node. Use a dedicated `VALIDATE_DIR`: the target deletes
+existing `.bin` files in that directory before writing new dumps.
+
+To check dumps you made yourself:
+`python3 validation/validate.py DIR [--ref auto|scipy|torch] [-v]`. Exit
+status: 0 if all pass, 1 if any fail, 2 for missing or malformed files.
+
+### Not hooked up yet
+
+- **`convolve()` in `src/conv2d_seq_opt_for_largesize.cpp`.** Not built or
+  tested. Its signature differs (`size_t` dimensions, filter after the
+  dimensions), so `all_impls()` needs a short wrapper for it.
+- **`--check` compares against `conv2d_seq`**, not an independent reference.
+  A bug shared by `seq` and another implementation would pass it. `make validate`
+  covers this, but only for the shapes it runs.
+- **`make validate` covers CUDA only with the default 32×8 block.** Dump file
+  names don't include the block shape. Other block shapes are covered by
+  `make test`, up to 1000×1000.
+- **No tests for invalid input** (even or negative K, zero sizes, null
+  pointers). `bin/conv` rejects a bad K itself, but the implementations are
+  not tested with one.
+- **No CI.** `make test` only runs when someone runs it, and with the default
+  `VALIDATE=auto` it skips the external check if neither SciPy nor PyTorch
+  is available alongside NumPy.
+
+## Benchmarks
+
+The scripts in `scripts/` run the experiments for the report by calling
+`bin/conv` across a set of configurations. They don't change any
+implementation code. For more detail, see [BENCHMARK.md](BENCHMARK.md).
+
+```
+make && make test                        # benchmark only code that passes its tests
+scripts/bench.sh --quick                 # reduced sweep of every experiment
+scripts/bench.sh -o results/final all    # full sweep -> results/final/*.csv
+python3 scripts/plot.py results/final    # -> plots/final/*.png + summary.md
+sbatch scripts/euler.slurm               # build, test, sweep and plot on one cluster node
+sbatch scripts/cuda_variants.slurm       # test CPU/CUDA variants and run selected sweeps
+```
+
+Check the partition, resources, and time limit in each Slurm script before
+submission. `cuda_variants.slurm` builds and tests the variants, then runs
+`baseline`, `omp`, and `cuda_blocks`; it writes results to
+`results/cuda_variants_<jobid>/`. It does not run the `torch` experiment.
+
+What is benchmarked:
+
+| Experiment | Configurations | Measures |
+|---|---|---|
+| `baseline` | every implementation × 256², 512², 1024², 2048² × K = 3, 5, 7 | time per call, speedup over `seq`, CUDA kernel-only vs end-to-end and the time spent in each stage |
+| `omp` | OpenMP × 1, 2, 4, … cores threads × `static` / `dynamic` / `guided` | thread scaling and scheduling policy |
+| `cuda_blocks` | CUDA × 13 thread-block shapes (e.g. 32×8, 16×16, 1×128) | effect of block shape and memory coalescing |
+| `torch` | PyTorch `conv2d` on the GPU when available and on the CPU, same problems as `baseline` | an external reference point; GPU execution can use cuDNN |
+
+When `CHECK=1` (the default), non-sequential driver runs are checked against
+`seq`, and failures are logged to `errors.log`. The script attempts to capture
+hardware, compiler information, and the git commit in `sysinfo.txt`; check
+that file for errors. Sweep parameters
+(implementations, sizes, filter sizes, threads, block shapes, iteration
+counts) can be overridden with environment variables. See
+`scripts/bench.sh --help`.
+
+The plots need Python 3 with pandas and matplotlib. The `torch` experiment
+needs PyTorch and is skipped if it isn't installed. A CUDA-enabled PyTorch
+installation and GPU are needed for the GPU library comparison.
+
+For a focused `cuda` versus `cuda_opt` comparison, the comparison script reads
+the Slurm **output log** (not `cuda_blocks.csv`) and writes a PDF plus matched
+timing CSV:
+
+```
+python3 scripts/plot_cuda_blocks.py conv_variants_JOBID.out -o plots/cuda_compare
+```
+
+It compares the printed end-to-end medians. Use `kernel_ms` in the benchmark
+CSV or the general plots to compare kernel execution separately.
+
+## Status
+
+- [x] Sequential baseline
+- [x] OpenMP
+- [x] CUDA variants
+- [x] Benchmark and plotting scripts
+- [ ] Report
