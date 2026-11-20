@@ -20,7 +20,8 @@
 
 set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
-module load gcc 2>/dev/null || echo "warning: module load gcc failed"
+# System g++ (no module), the same compiler the other runs used.
+g++ --version | head -1
 
 OUT=results/cpu-$SLURM_JOB_ID
 mkdir -p "$OUT"
@@ -37,6 +38,7 @@ IMPLS="seq omp omp_simd omp_blocked omp_tiled" \
     || echo "bench.sh reported failures; see $OUT/bench/errors.log"
 
 # Plots need pandas + matplotlib; skip if they're not available here.
+module load conda/miniforge 2>/dev/null || true
 python3 scripts/plot_vec.py "$OUT/vec" -o "$OUT/vec/plots" \
     || echo "plotting skipped; run scripts/plot_vec.py $OUT/vec elsewhere"
 python3 scripts/plot.py "$OUT/bench" -o "$OUT/bench/plots" \
