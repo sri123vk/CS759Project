@@ -122,31 +122,38 @@ CUDA; `schedule` is set only for OpenMP rows. The FLOP count
 ## Compiler vectorization study
 
 Review item: "compiler vectorizations". Separate from `bench.sh all`
-because it needs two builds of the driver.
+because it needs one build of the driver per instruction set.
 
 ```
-scripts/vec_study.sh -o results/vec-final    # build default + -march=native, test both, benchmark both
+sbatch scripts/cpu_study.slurm                  # on Euler: this study + the OpenMP sweep with omp_tiled
+scripts/vec_study.sh -o results/vec-final       # or just the study, inside a job
 python3 scripts/plot_vec.py results/vec-final   # -> plots/vec-final/fig_vec_speedup.png + vec_summary.md
 ```
 
-- **Builds.** Default Makefile flags (baseline x86-64: SSE2, 4 floats per
-  vector, no FMA) vs the same flags plus `-march=native`. They go to
-  `bin/vec/default` and `bin/vec/native`; `bin/conv` is not touched. Both
-  builds must pass `make test` before they are benchmarked. With FMA on,
-  the tests accept `omp_simd`/`omp_blocked` within the error bound
-  instead of bit-identical to seq (see `tests/test_conv.cpp`).
-- **Runs.** `bench.sh omp` on each binary for seq, omp, omp_simd and
-  omp_blocked, at 512², 1024², 2048² × K = 3, 5, 7, on 1 thread and on all
-  cores (static schedule). One thread isolates the effect of wider vectors;
-  all cores shows whether it survives once memory bandwidth is shared.
-- **Compiler evidence.** `vec_default.txt` / `vec_native.txt` are GCC's
+- **Builds.** The same Makefile flags with an explicit `-march` each:
+  `sse2` (`-march=x86-64`: 4 floats per vector, no FMA), `avx2`
+  (`-march=x86-64-v3`: 8 floats, FMA) and `native` (`-march=native`:
+  AVX-512, 16 floats, on Euler's Zen 4 nodes). The `-march` is explicit
+  because the compiler default differs between systems: Ubuntu's g++
+  targets plain x86-64, while the g++ on Euler (AlmaLinux 10) targets
+  x86-64-v3, so a plain `make` on Euler is already the `avx2` build.
+  `isa.txt` records what each build enables. Builds go to `bin/vec/<build>`;
+  `bin/conv` is not touched. Every build must pass `make test` before it
+  is benchmarked. With FMA on, the tests accept the vectorized OpenMP
+  versions within the error bound instead of bit-identical to seq (see
+  `tests/test_conv.cpp`).
+- **Runs.** `bench.sh omp` on each binary for seq, omp, omp_simd,
+  omp_blocked and omp_tiled, at 512², 1024², 2048² × K = 3, 5, 7, on 1
+  thread and on all cores (static schedule). One thread isolates the effect
+  of wider vectors; all cores shows whether it survives once memory
+  bandwidth is shared. Speedups are relative to the `sse2` build.
+- **Compiler evidence.** `vec_<build>.txt` are GCC's
   `-fopt-info-vec-optimized` reports for the implementation files, and
-  `vec_*_inorder.txt` lists loops vectorized only as an in-order
+  `vec_<build>_inorder.txt` lists loops vectorized only as an in-order
   (fold-left) reduction: the multiplies use vector lanes but the adds into
   the single accumulator stay sequential, so the gain is small.
-- **Note.** On recent Intel CPUs GCC uses 256-bit (AVX2) vectors even when
-  AVX-512 is available (its default `-mprefer-vector-width=256`); the
-  report shows the width actually used.
+- **Note.** Whether GCC actually uses 512-bit vectors with AVX-512 depends
+  on its tuning for the CPU; the report shows the width actually used.
 - Run it on the same cluster node type as the other experiments, inside a
   job (`srun`/`sbatch`), not on the login node.
 
