@@ -1,30 +1,41 @@
 #!/usr/bin/env bash
 # Compiler-vectorization study (review: "compiler vectorizations").
 #
-# Builds the CPU implementations twice, with the Makefile's default flags and
-# with -march=native added, and benchmarks both on the same problems. The
-# default build may only use the baseline x86-64 vector instructions (SSE2,
-# 4 floats wide, no FMA); -march=native lets the compiler use whatever this
-# CPU has (AVX2 = 8 floats, AVX-512 = 16 floats, FMA). Comparing the two
-# shows how much each implementation gains from wider vectors, and the
-# compiler's own report shows which loops it actually vectorized.
+# Builds the CPU implementations once per target instruction set and
+# benchmarks every build on the same problems. Each build names its -march
+# explicitly, because the compiler's own default differs between systems
+# (Ubuntu's g++ targets plain x86-64 = SSE2; the g++ on Euler's AlmaLinux 10
+# targets x86-64-v3 = AVX2 + FMA). Default builds:
+#
+#   sse2    -march=x86-64      4 floats per vector, no FMA
+#   avx2    -march=x86-64-v3   8 floats per vector, FMA
+#   native  -march=native      whatever this CPU has (AVX-512 = 16 floats on
+#                              Euler's Zen 4 nodes) and tuning for it
+#
+# Comparing them shows how much each implementation gains from wider
+# vectors, and the compiler's own report shows which loops it vectorized
+# at what width.
 #
 # Usage: scripts/vec_study.sh [-o OUTDIR] [--quick]
 #
 # Output (OUTDIR, default results/vec-<host>-<date>):
-#   default/omp.csv, native/omp.csv    bench.sh "omp" experiment for each build
-#   default/sysinfo.txt, native/...    hardware and the flags actually used
-#   vec_default.txt, vec_native.txt    GCC -fopt-info-vec reports (implementation sources only)
-#   vec_<build>_inorder.txt            loops GCC vectorized only as an in-order reduction
-#   isa.txt                            what -march=native turns on for this CPU
+#   builds.txt                    build names in order (the first is the reference)
+#   <build>/omp.csv               bench.sh "omp" experiment for each build
+#   <build>/sysinfo.txt           hardware and the flags actually used
+#   vec_<build>.txt               GCC -fopt-info-vec report (implementation sources only)
+#   vec_<build>_inorder.txt       loops GCC vectorized only as an in-order reduction
+#   isa.txt                       the instruction-set options each build turns on
+#   test_<build>.log              unit-test output for each build
 #
 # Then: python3 scripts/plot_vec.py OUTDIR
 #
-# Nothing here changes the normal build: the two builds go to bin/vec/default
-# and bin/vec/native, and bin/conv is not touched. CUDA is left out (CUDA=0)
-# because this study is CPU-only.
+# Nothing here changes the normal build: the builds go to bin/vec/<build>,
+# and bin/conv is not touched. CUDA is left out (CUDA=0) because this study
+# is CPU-only.
 #
 # Settings (environment variables, defaults in brackets):
+#   VEC_BUILDS   ["sse2=-march=x86-64 avx2=-march=x86-64-v3 native=-march=native"]
+#                name=extra flags, space-separated; the first is the reference
 #   VEC_IMPLS    ["seq omp omp_simd omp_blocked omp_tiled"]
 #   OMP_SIZES    ["512 1024 2048"]   OMP_KS ["3 5 7"]
 #   THREADS      ["1 <nproc>"]        single core isolates the vector effect;
@@ -47,6 +58,10 @@ while (($#)); do
 done
 
 NPROC=$(nproc)
+if [[ ${SLURM_CPUS_PER_TASK:-} =~ ^[1-9][0-9]*$ ]] && ((NPROC > SLURM_CPUS_PER_TASK)); then
+    NPROC=$SLURM_CPUS_PER_TASK
+fi
+VEC_BUILDS=${VEC_BUILDS:-"sse2=-march=x86-64 avx2=-march=x86-64-v3 native=-march=native"}
 VEC_IMPLS=${VEC_IMPLS:-"seq omp omp_simd omp_blocked omp_tiled"}
 BASE_FLAGS=${BASE_FLAGS:-"-O3 -std=c++17 -Wall -Wextra"}
 if ((QUICK)); then
@@ -62,21 +77,33 @@ OUT=${OUT:-results/vec-$(hostname -s)-$(date +%Y%m%d-%H%M%S)}
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)   # absolute, so -o works with relative or absolute paths
 
-# Which instruction-set extensions -march=native enables on this machine.
-{
-    echo "# g++ -march=native on $(hostname)"
-    g++ -march=native -Q --help=target 2>/dev/null \
-        | grep -E '^\s+-march=|^\s+-m(sse4\.2|avx|avx2|fma|avx512f|avx512vl)\s' \
-        | sed 's/^\s*//'
-} > "$OUT/isa.txt"
+NAMES=()
+declare -A EXTRA
+for b in $VEC_BUILDS; do
+    NAMES+=("${b%%=*}")
+    EXTRA[${b%%=*}]=${b#*=}
+done
+printf '%s\n' "${NAMES[@]}" > "$OUT/builds.txt"
 
-# build NAME EXTRA_FLAGS
+# Which instruction-set extensions each build enables on this machine.
+: > "$OUT/isa.txt"
+for name in "${NAMES[@]}"; do
+    {
+        echo "# $name: g++ ${EXTRA[$name]} on $(hostname)"
+        g++ ${EXTRA[$name]} -Q --help=target 2>/dev/null \
+            | grep -E '^\s+-march=|^\s+-m(sse4\.2|avx|avx2|fma|avx512f|avx512vl)\s' \
+            | sed 's/^\s*//'
+        echo
+    } >> "$OUT/isa.txt"
+done
+
+# build NAME
 # Fresh build into bin/vec/NAME, unit tests on that build, then the driver
 # again with GCC's vectorization report. The report flag only writes the
 # report; it doesn't change the generated code.
 build() {
-    local name=$1 extra=$2 bin=bin/vec/$1
-    local flags="$BASE_FLAGS${extra:+ $extra}"
+    local name=$1 bin=bin/vec/$1
+    local flags="$BASE_FLAGS ${EXTRA[$1]}"
     echo "== build $name: $flags" >&2
     rm -rf "$bin"
     make --no-print-directory CUDA=0 BIN="$bin" CXXFLAGS="$flags" test VALIDATE=0 \
@@ -108,13 +135,12 @@ build() {
     rm -rf "$tmp"
 }
 
-build default ""
-build native "-march=native"
+for name in "${NAMES[@]}"; do build "$name"; done
 
-for name in default native; do
+for name in "${NAMES[@]}"; do
     echo "== benchmark $name" >&2
     # Exported so bench.sh's sysinfo.txt records the flags of this build.
-    CXXFLAGS="$BASE_FLAGS$([[ $name == native ]] && echo ' -march=native')" \
+    CXXFLAGS="$BASE_FLAGS ${EXTRA[$name]}" \
     CONV="$ROOT/bin/vec/$name/conv" IMPLS="$VEC_IMPLS" \
         scripts/bench.sh -o "$OUT/$name" omp
 done
