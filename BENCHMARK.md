@@ -143,9 +143,7 @@ python3 scripts/plot_vec.py results/vec-final   # -> plots/vec-final/fig_vec_spe
   `-fopt-info-vec-optimized` reports for the implementation files, and
   `vec_*_inorder.txt` lists loops vectorized only as an in-order
   (fold-left) reduction: the multiplies use vector lanes but the adds into
-  the single accumulator stay sequential, so the gain is small. On GCC 11
-  this is the per-pixel loop of seq and omp, which is why those two barely
-  change while omp_simd and omp_blocked (true vector loops over pixels) do.
+  the single accumulator stay sequential, so the gain is small.
 - **Note.** On recent Intel CPUs GCC uses 256-bit (AVX2) vectors even when
   AVX-512 is available (its default `-mprefer-vector-width=256`); the
   report shows the width actually used.
