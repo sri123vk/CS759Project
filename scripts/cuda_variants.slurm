@@ -90,15 +90,30 @@ for impl in cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout \
     srun ./bin/test_conv --impl "$impl/7x3"
 done
 
+# Test automatic block selection for one workload.
+echo "Testing automatic block selection for cuda_multiout_const"
+
+srun ./bin/conv \
+    --impl cuda_multiout_const \
+    --size 2048 \
+    --K 3 \
+    --block auto \
+    --warmup 3 \
+    --iters 10 \
+    --check \
+    --header
+
 export IMPLS="seq omp omp_simd omp_blocked cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const"
-export SIZES="1024 2048"
-export KS="3 7"
-export OMP_SIZES="1024 2048"
-export OMP_KS="3 7"
-export BLOCK_SIZES="1024 2048"
-export BLOCK_KS="3 7"
+export SIZES="256 512 1024 2048"
+export KS="3 5 7 11"
+# OpenMP scaling: use the same workloads.
+export OMP_SIZES="$SIZES"
+export OMP_KS="$KS"
+# CUDA block sweep: use the same workloads.
+export BLOCK_SIZES="$SIZES"
+export BLOCK_KS="$KS"
 export BLOCKS="32x8 32x16 16x16 8x8 1x128"
-export BLOCK="32 8"
+export BLOCK="auto"
 export ITERS=10
 export WARMUP=3
 export CHECK=1
