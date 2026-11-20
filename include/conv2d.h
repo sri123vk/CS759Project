@@ -23,6 +23,11 @@ void conv2d_omp_simd(const float* in, float* out, const float* k,
 void conv2d_omp_blocked(const float* in, float* out, const float* k,
                         int H, int W, int K);
 
+// Tiles of several output rows x a few columns, so each input row loaded
+// into cache is reused for all the tile's rows that need it.
+void conv2d_omp_tiled(const float* in, float* out, const float* k,
+                      int H, int W, int K);
+
 //optimized version for the large size matrices
 //image rectangle shape handled
 //zero-padding,kernel square matrix with odd size
