@@ -15,7 +15,7 @@
 #SBATCH -N 1
 #SBATCH -c 16
 #SBATCH --mem=16G
-#SBATCH -t 0-01:00:00
+#SBATCH -t 0-00:40:00   # instruction partition allows at most 45 min
 #SBATCH -o results/slurm-cpu-%j.out
 
 set -euo pipefail
