@@ -25,7 +25,7 @@
 # because this study is CPU-only.
 #
 # Settings (environment variables, defaults in brackets):
-#   VEC_IMPLS    ["seq omp omp_simd omp_blocked"]
+#   VEC_IMPLS    ["seq omp omp_simd omp_blocked omp_tiled"]
 #   OMP_SIZES    ["512 1024 2048"]   OMP_KS ["3 5 7"]
 #   THREADS      ["1 <nproc>"]        single core isolates the vector effect;
 #                                     all cores shows whether it survives memory limits
@@ -47,7 +47,7 @@ while (($#)); do
 done
 
 NPROC=$(nproc)
-VEC_IMPLS=${VEC_IMPLS:-"seq omp omp_simd omp_blocked"}
+VEC_IMPLS=${VEC_IMPLS:-"seq omp omp_simd omp_blocked omp_tiled"}
 BASE_FLAGS=${BASE_FLAGS:-"-O3 -std=c++17 -Wall -Wextra"}
 if ((QUICK)); then
     : "${OMP_SIZES:=512}" "${OMP_KS:=3 7}" "${ITERS:=5}"
