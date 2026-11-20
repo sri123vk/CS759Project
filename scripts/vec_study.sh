@@ -60,6 +60,7 @@ export ITERS=${ITERS:-}
 
 OUT=${OUT:-results/vec-$(hostname -s)-$(date +%Y%m%d-%H%M%S)}
 mkdir -p "$OUT"
+OUT=$(cd "$OUT" && pwd)   # absolute, so -o works with relative or absolute paths
 
 # Which instruction-set extensions -march=native enables on this machine.
 {
@@ -85,7 +86,7 @@ build() {
 
     local report=$OUT/vec_${name}_all.txt
     make --no-print-directory CUDA=0 BIN="$bin" \
-        CXXFLAGS="$flags -fopt-info-vec-optimized=$PWD/$report" "$bin/conv" > /dev/null
+        CXXFLAGS="$flags -fopt-info-vec-optimized=$report" "$bin/conv" > /dev/null
     # Keep only lines about the implementations, not the driver or headers.
     grep -E '^src/conv2d_' "$report" | sort -u > "$OUT/vec_$name.txt" || true
     rm -f "$report"
