@@ -1,1 +1,0 @@
-implementations: seq omp omp_simd omp_blocked cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const

@@ -1,1 +1,0 @@
-scripts/bench.sh: line 94: /srv/home/rangrej/CS759Project_cuda_variant/scripts/sysinfo.sh: Permission denied
