@@ -91,10 +91,11 @@ Args parse(int argc, char** argv) {
     return a;
 }
 
-// Additional names are recognized even in CPU-only builds, so main can
-// report a useful error if CUDA was not compiled in.
-bool is_extra_cuda(const std::string& impl) {
-    return impl == "cuda_const" || impl == "cuda_tiled_const" ||
+// Names served by cuda_conv_run_variant. They are recognized even in CPU-only
+// builds, so main can report a useful error if CUDA was not compiled in.
+bool is_cuda_variant(const std::string& impl) {
+    return impl == "cuda_opt" ||
+           impl == "cuda_const" || impl == "cuda_tiled_const" ||
            impl == "cuda_multiout" || impl == "cuda_multiout_const" ||
            impl == "cuda_multiout_tiled" || impl == "cuda_multiout_tiled_const";
 }
@@ -172,13 +173,13 @@ Timings bench_cuda(const Args& a, const std::vector<float>& in,
     return t;
 }
 #endif
-#if defined(CONV_HAVE_CUDA) && defined(CONV_HAVE_CUDA_OPT)
-// Dispatch each named variant without replacing the original implementations.
-CudaTimes run_opt_or_variant(const std::string& impl, const CudaConv& c,
-                             const float* in, float* out, const float* k,
-                             int bx, int by) {
-    if (impl == "cuda_opt") return cuda_conv_run_opt(c, in, out, k, bx, by);
-#ifdef CONV_HAVE_CUDA_VARIANTS
+#if defined(CONV_HAVE_CUDA) && defined(CONV_HAVE_CUDA_VARIANTS)
+// Map each variant's command-line name to its kernel.
+CudaTimes run_variant(const std::string& impl, const CudaConv& c,
+                      const float* in, float* out, const float* k,
+                      int bx, int by) {
+    if (impl == "cuda_opt")
+        return cuda_conv_run_variant(c, in, out, k, bx, by, CudaVariant::Tiled);
     if (impl == "cuda_const")
         return cuda_conv_run_variant(c, in, out, k, bx, by, CudaVariant::Constant);
     if (impl == "cuda_tiled_const")
@@ -191,13 +192,12 @@ CudaTimes run_opt_or_variant(const std::string& impl, const CudaConv& c,
         return cuda_conv_run_variant(c, in, out, k, bx, by, CudaVariant::MultiOutputTiled);
     if (impl == "cuda_multiout_tiled_const")
         return cuda_conv_run_variant(c, in, out, k, bx, by, CudaVariant::MultiOutputTiledConstant);
-#endif
-    throw std::invalid_argument("unknown or unavailable CUDA variant: " + impl);
+    throw std::invalid_argument("unknown CUDA variant: " + impl);
 }
 
-// Allocate once, then time the optimized copy/kernel/copy path like cuda.
-Timings bench_cuda_opt(const Args& a, const std::vector<float>& in,
-                       std::vector<float>& out, const std::vector<float>& k) {
+// Allocate once, then time the variant's copy/kernel/copy path like cuda.
+Timings bench_cuda_variant(const Args& a, const std::vector<float>& in,
+                           std::vector<float>& out, const std::vector<float>& k) {
     cuda_init();
     if (!cuda_block_supported(a.H, a.W, a.bx, a.by)) {
         std::fprintf(stderr, "unsupported block/grid configuration %dx%d\n", a.bx, a.by);
@@ -209,12 +209,12 @@ Timings bench_cuda_opt(const Args& a, const std::vector<float>& in,
     std::vector<double> h2d, kern, d2h;
     try {
         for (int i = 0; i < a.warmup; ++i)
-            run_opt_or_variant(a.impl, c, in.data(), out.data(), k.data(), a.bx, a.by);
+            run_variant(a.impl, c, in.data(), out.data(), k.data(), a.bx, a.by);
         t.call_ms.reserve(a.iters);
         for (int i = 0; i < a.iters; ++i) {
             CudaTimes stages;
             t.call_ms.push_back(time_ms([&] {
-                stages = run_opt_or_variant(a.impl, c, in.data(), out.data(), k.data(), a.bx, a.by);
+                stages = run_variant(a.impl, c, in.data(), out.data(), k.data(), a.bx, a.by);
             }));
             h2d.push_back(stages.h2d_ms);
             kern.push_back(stages.kernel_ms);
@@ -249,7 +249,7 @@ void autotune_block(Args& a, const std::vector<float>& in,
                 auto run = [&]() {
                     return a.impl == "cuda"
                         ? cuda_conv_run(c, in.data(), out.data(), k.data(), bx, by)
-                        : run_opt_or_variant(a.impl, c, in.data(), out.data(), k.data(), bx, by);
+                        : run_variant(a.impl, c, in.data(), out.data(), k.data(), bx, by);
                 };
                 try {
                     run(); // One warm-up for this candidate.
@@ -294,8 +294,7 @@ std::string field(double v) {
 int main(int argc, char** argv) {
     Args a = parse(argc, argv);
     const bool cuda = (a.impl == "cuda");
-    const bool cuda_opt = (a.impl == "cuda_opt");
-    const bool cuda_extra = is_extra_cuda(a.impl);
+    const bool cuda_variant = is_cuda_variant(a.impl);
     const size_t n = (size_t)a.H * a.W;
     // out starts as NaN so any pixel an implementation never writes fails --check.
     std::vector<float> in(n), k((size_t)a.K * a.K),
@@ -306,16 +305,15 @@ int main(int argc, char** argv) {
     Timings t;
     try {
     if (a.auto_block) {
-        if (!cuda && !cuda_opt && !cuda_extra) {
+        if (!cuda && !cuda_variant) {
             std::fprintf(stderr, "--block auto requires a CUDA implementation\n");
             return 1;
         }
-#if defined(CONV_HAVE_CUDA) && defined(CONV_HAVE_CUDA_OPT)
+#if defined(CONV_HAVE_CUDA) && defined(CONV_HAVE_CUDA_VARIANTS)
         autotune_block(a, in, out, k);
 #else
-        std::fprintf(stderr, "--block auto requires both CUDA implementations to be built\n");
+        std::fprintf(stderr, "--block auto requires a CUDA build\n");
         return 1;
-
 #endif
     }
 
@@ -330,9 +328,9 @@ int main(int argc, char** argv) {
     return 1;
 #endif
 
-    } else if (cuda_opt || cuda_extra) {
-#if defined(CONV_HAVE_CUDA) && defined(CONV_HAVE_CUDA_OPT)
-    t = bench_cuda_opt(a, in, out, k);
+    } else if (cuda_variant) {
+#if defined(CONV_HAVE_CUDA) && defined(CONV_HAVE_CUDA_VARIANTS)
+    t = bench_cuda_variant(a, in, out, k);
 #else
     std::fprintf(stderr, "CUDA implementation '%s' is unavailable in this build\n", a.impl.c_str());
     return 1;
@@ -364,8 +362,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    const std::string bx = (cuda || cuda_opt || cuda_extra) ? std::to_string(a.bx) : "";
-    const std::string by = (cuda || cuda_opt || cuda_extra) ? std::to_string(a.by) : "";
+    const std::string bx = (cuda || cuda_variant) ? std::to_string(a.bx) : "";
+    const std::string by = (cuda || cuda_variant) ? std::to_string(a.by) : "";
     if (a.header)
         std::printf("impl,H,W,K,bx,by,iters,median_ms,min_ms,"
                     "h2d_ms,kernel_ms,d2h_ms,alloc_ms,"

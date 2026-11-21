@@ -1,6 +1,7 @@
-// Additional single-channel 2-D cross-correlation experiments.
-// Existing cuda (direct) and cuda_opt (shared tile) remain unchanged.
+// Single-channel 2-D cross-correlation experiments beyond the direct
+// baseline in conv2d_cuda.cu (impl name `cuda`).
 //
+// cuda_opt:         shared input tile, filter in global memory.
 // cuda_const:       one output per thread, filter in constant memory.
 // cuda_tiled_const: shared input tile plus constant-memory filter.
 // cuda_multiout:             two outputs per thread, global image and filter.
@@ -66,11 +67,24 @@ __global__ void conv2d_variant_constant(
     output[row * W + col] = sum;
 }
 
+// Read a filter coefficient from constant memory or from the global buffer.
+// Templating lets each pair of kernels differ only in where the filter lives.
+template <bool UseConstant>
+__device__ __forceinline__ float filter_weight(const float* filter, int index) {
+    if constexpr (UseConstant) {
+        return g_variant_filter[index];
+    } else {
+        return filter[index];
+    }
+}
+
 // Each block cooperatively loads its output-sized image tile plus the halo.
-// The filter is independent of the shared input tile and lives in constant
-// memory. Every thread participates in loading and in the barrier.
-__global__ void conv2d_variant_tiled_constant(
-    const float* image, float* output, int H, int W, int K
+// The filter is independent of the shared input tile: cuda_opt reads it from
+// global memory, cuda_tiled_const from constant memory. Every thread
+// participates in loading and in the barrier.
+template <bool UseConstant>
+__global__ void conv2d_variant_tiled(
+    const float* image, float* output, const float* filter, int H, int W, int K
 ) {
     extern __shared__ float tile[];
     const int radius = K / 2;
@@ -103,7 +117,7 @@ __global__ void conv2d_variant_tiled_constant(
             const float* tile_row = tile +
                 (static_cast<int>(threadIdx.y) + i) * tile_width + threadIdx.x;
             for (int j = 0; j < K; ++j) {
-                sum += tile_row[j] * g_variant_filter[i * K + j];
+                sum += tile_row[j] * filter_weight<UseConstant>(filter, i * K + j);
             }
         }
     } else {
@@ -115,7 +129,7 @@ __global__ void conv2d_variant_tiled_constant(
             for (int j = 0; j < K; ++j) {
                 const int x = col + j - radius;
                 if (y >= 0 && y < H && x >= 0 && x < W) {
-                    sum += tile_row[j] * g_variant_filter[i * K + j];
+                    sum += tile_row[j] * filter_weight<UseConstant>(filter, i * K + j);
                 }
             }
         }
@@ -180,15 +194,6 @@ __global__ void conv2d_variant_multiout(
 // Compile separate kernels for the requested combinations. Each thread uses
 // one coefficient for two accumulators; this is an independent optimization
 // from shared image tiles and constant-memory filter coefficients.
-template <bool UseConstant>
-__device__ __forceinline__ float multiout_weight(const float* filter, int index) {
-    if constexpr (UseConstant) {
-        return g_variant_filter[index];
-    } else {
-        return filter[index];
-    }
-}
-
 template <bool UseShared, bool UseConstant>
 __global__ void conv2d_variant_multiout_combined(
     const float* image, float* output, const float* filter, int H, int W, int K
@@ -245,7 +250,7 @@ __global__ void conv2d_variant_multiout_combined(
                 in1 = image + y * W + col1 - radius;
             }
             for (int j = 0; j < K; ++j) {
-                const float coefficient = multiout_weight<UseConstant>(filter, i * K + j);
+                const float coefficient = filter_weight<UseConstant>(filter, i * K + j);
                 sum0 += in0[j] * coefficient;
                 sum1 += in1[j] * coefficient;
             }
@@ -262,7 +267,7 @@ __global__ void conv2d_variant_multiout_combined(
                 const bool valid0 = x0 >= 0 && x0 < W;
                 const bool valid1 = have_second && x1 >= 0 && x1 < W;
                 if (valid0 || valid1) {
-                    const float coefficient = multiout_weight<UseConstant>(filter, i * K + j);
+                    const float coefficient = filter_weight<UseConstant>(filter, i * K + j);
                     if constexpr (UseShared) {
                         const int tile_index = (ty + i) * tile_width + tx + j;
                         if (valid0) sum0 += tile[tile_index] * coefficient;
@@ -288,7 +293,8 @@ bool is_multiout(CudaVariant variant) {
 }
 
 bool uses_shared_tile(CudaVariant variant) {
-    return variant == CudaVariant::TiledConstant ||
+    return variant == CudaVariant::Tiled ||
+           variant == CudaVariant::TiledConstant ||
            variant == CudaVariant::MultiOutputTiled ||
            variant == CudaVariant::MultiOutputTiledConstant;
 }
@@ -332,8 +338,12 @@ LaunchConfig get_launch_config(int H, int W, int K, int bx, int by,
         check_variant(cudaFuncGetAttributes(&attr, conv2d_variant_constant),
                       "get constant kernel properties");
         break;
+    case CudaVariant::Tiled:
+        check_variant(cudaFuncGetAttributes(&attr, conv2d_variant_tiled<false>),
+                      "get tiled kernel properties");
+        break;
     case CudaVariant::TiledConstant:
-        check_variant(cudaFuncGetAttributes(&attr, conv2d_variant_tiled_constant),
+        check_variant(cudaFuncGetAttributes(&attr, conv2d_variant_tiled<true>),
                       "get tiled constant kernel properties");
         break;
     case CudaVariant::MultiOutput:
@@ -464,9 +474,13 @@ CudaTimes cuda_conv_run_variant(const CudaConv& c, const float* in, float* out,
             conv2d_variant_constant<<<launch.grid, launch.block>>>(
                 c.d_in, c.d_out, c.H, c.W, c.K);
             break;
+        case CudaVariant::Tiled:
+            conv2d_variant_tiled<false><<<launch.grid, launch.block, launch.shared_bytes>>>(
+                c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
+            break;
         case CudaVariant::TiledConstant:
-            conv2d_variant_tiled_constant<<<launch.grid, launch.block, launch.shared_bytes>>>(
-                c.d_in, c.d_out, c.H, c.W, c.K);
+            conv2d_variant_tiled<true><<<launch.grid, launch.block, launch.shared_bytes>>>(
+                c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
             break;
         case CudaVariant::MultiOutput:
             conv2d_variant_multiout<<<launch.grid, launch.block>>>(

@@ -22,7 +22,7 @@ done
 echo "Testing conv2d_cuda"
 srun ./bin/test_conv --impl cuda/32x8
 
-echo "Testing conv2d_cuda_opt"
+echo "Testing cuda_opt"
 srun ./bin/test_conv --impl cuda_opt/32x8
 
 # Create a separate directory for this job's validation files.

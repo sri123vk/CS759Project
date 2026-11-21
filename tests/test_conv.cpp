@@ -12,9 +12,8 @@
 //   omp_simd/<schedule>/t<threads>        when built with -DCONV_HAVE_OMP_SIMD
 //   omp_blocked/<schedule>/t<threads>     when built with -DCONV_HAVE_OMP_BLOCKED
 //   cuda/<bx>x<by>                        when built with -DCONV_HAVE_CUDA
-//   cuda_opt/<bx>x<by>                    when built with -DCONV_HAVE_CUDA_OPT
-//   cuda_const, cuda_tiled_const, cuda_multiout and the multiout combinations
-//   /<bx>x<by>
+//   cuda_opt, cuda_const, cuda_tiled_const, cuda_multiout and the multiout
+//   combinations /<bx>x<by>
 //                                         when built with -DCONV_HAVE_CUDA_VARIANTS
 //
 // Exit status: 0 if every check passes, 1 if any fails, 2 on bad usage.
@@ -130,34 +129,11 @@ std::vector<Impl> all_impls() {
     }
 #endif
 
-#ifdef CONV_HAVE_CUDA_OPT
-    v.push_back({
-        "cuda_opt/32x8",
-        conv2d_cuda_opt,
-        [] {},
-        false
-    });
-    v.push_back({
-        "cuda_opt/7x3",
-        [](const float* in, float* out, const float* k, int H, int W, int K) {
-            CudaConv c = cuda_conv_alloc(H, W, K);
-            try {
-                cuda_conv_run_opt(c, in, out, k, 7, 3);
-            } catch (...) {
-                cuda_conv_free(c);
-                throw;
-            }
-            cuda_conv_free(c);
-        },
-        [] {},
-        false
-    });
-#endif
-
 #if defined(CONV_HAVE_CUDA) && defined(CONV_HAVE_CUDA_VARIANTS)
-    // Test each new kernel with a regular block and an odd block that leaves
+    // Test each variant with a regular block and an odd block that leaves
     // partial blocks, including at image boundaries.
     const struct { const char* name; CudaVariant variant; } extra_variants[] = {
+        {"cuda_opt", CudaVariant::Tiled},
         {"cuda_const", CudaVariant::Constant},
         {"cuda_tiled_const", CudaVariant::TiledConstant},
         {"cuda_multiout", CudaVariant::MultiOutput},

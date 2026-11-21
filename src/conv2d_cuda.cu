@@ -64,6 +64,24 @@ int cuda_max_threads_per_block()
     return n;
 }
 
+bool cuda_block_supported(int H, int W, int bx, int by)
+{
+    if (H <= 0 || W <= 0 || bx <= 0 || by <= 0) return false;
+
+    int dev = 0;
+    cudaDeviceProp prop{};
+    CUDA_CHECK(cudaGetDevice(&dev));
+    CUDA_CHECK(cudaGetDeviceProperties(&prop, dev));
+
+    // 64-bit arithmetic so W + bx - 1 cannot overflow for large images.
+    const long long threads = (long long)bx * by;
+    const long long grid_x = ((long long)W + bx - 1) / bx;
+    const long long grid_y = ((long long)H + by - 1) / by;
+    return bx <= prop.maxThreadsDim[0] && by <= prop.maxThreadsDim[1] &&
+           threads <= prop.maxThreadsPerBlock &&
+           grid_x <= prop.maxGridSize[0] && grid_y <= prop.maxGridSize[1];
+}
+
 CudaConv cuda_conv_alloc(int H, int W, int K)
 {
     CudaConv c;

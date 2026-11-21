@@ -113,13 +113,10 @@ CUDA implementations available through `--impl`:
 | Name | Implementation |
 |---|---|
 | `cuda` | Direct baseline; one output per thread. |
-| `cuda_opt` | Shared-memory input tiles with halos; falls back to its original kernel when tiling cannot be used. |
+| `cuda_opt` | Shared-memory input tiles with halos and a global-memory filter. Fails with an error if the tile does not fit in shared memory. |
 | `cuda_const` | Direct kernel with filter coefficients in constant memory. |
 | `cuda_tiled_const` | Shared-memory input tiles and a constant-memory filter. |
 | `cuda_multiout` | Two outputs per thread with a global-memory filter. |
-
-Set `CONV_CUDA_TRACE=1` for a diagnostic run to see whether `cuda_opt` uses a
-shared tile or its fallback. Leave it unset when measuring performance.
 
 ## Tests
 

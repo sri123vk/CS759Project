@@ -43,15 +43,6 @@ void convolve(
 void conv2d_cuda(const float* in, float* out, const float* k,
                  int H, int W, int K);
 
-
-void conv2d_cuda_opt(
-    const float *image,
-    float *output,
-    const float *mask,
-    int H,
-    int W,
-    int K
-);
 // Lower-level pieces for benchmarking: allocation happens once, outside the
 // timed loop, and each stage of a run is timed on the GPU with cudaEvents.
 struct CudaConv {
@@ -77,12 +68,11 @@ CudaTimes cuda_conv_run(const CudaConv& c, const float* in, float* out,
 
 // Check whether a block and its grid fit the GPU's launch limits.
 bool cuda_block_supported(int H, int W, int bx, int by);
-CudaTimes cuda_conv_run_opt(const CudaConv& c, const float* in, float* out,
-                            const float* k, int bx, int by);
 
-// Additional single-channel CUDA experiments. The existing `cuda` and
-// `cuda_opt` implementations remain independent and unchanged.
+// Additional single-channel CUDA experiments (src/conv2d_cuda_variants.cu).
+// Unlike the functions above, these throw std::exception on errors.
 enum class CudaVariant {
+    Tiled,           // `cuda_opt`: shared-memory image tile, global-memory filter
     Constant,        // one output per thread, constant-memory filter
     TiledConstant,   // shared-memory image tile, constant-memory filter
     MultiOutput,             // two outputs per thread, global-memory filter

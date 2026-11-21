@@ -79,8 +79,8 @@ for impl in omp omp_simd omp_blocked; do
     OMP_NUM_THREADS=1 srun ./bin/test_conv --impl "$impl/static/t1"
 done
 
-echo "Confirming the existing shared-memory path"
-CONV_CUDA_TRACE=1 srun ./bin/conv --impl cuda_opt \
+echo "Checking cuda_opt on a small image with partial blocks"
+srun ./bin/conv --impl cuda_opt \
     --H 33 --W 65 --K 7 --block 32 8 \
     --warmup 0 --iters 1 --check --header
 
