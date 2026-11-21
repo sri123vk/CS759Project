@@ -44,7 +44,7 @@ except ImportError:
 
 # bench.sh's columns: "threads,schedule," + bin/conv's header. If the output
 # file already has a header (e.g. the driver gained columns), that one is used.
-DEFAULT_COLUMNS = ("threads,schedule,impl,H,W,K,bx,by,iters,median_ms,min_ms,"
+DEFAULT_COLUMNS = ("threads,schedule,impl,H,W,K,C,bx,by,iters,median_ms,min_ms,"
                    "h2d_ms,kernel_ms,d2h_ms,alloc_ms,"
                    "max_abs_err,max_rel_err,err_ratio,nonfinite,pass").split(",")
 
@@ -172,7 +172,7 @@ def main():
                 times, y = bench_cpu(x, w, K, a.threads, a.warmup, iters)
                 runs.append(({"impl": "torch_cpu", "threads": a.threads}, times, y))
             for info, times, y in runs:
-                r = {"H": n, "W": n, "K": K, "iters": len(times),
+                r = {"H": n, "W": n, "K": K, "C": 1, "iters": len(times),
                      "median_ms": f"{np.median(times):.4f}", "min_ms": f"{min(times):.4f}", **info}
                 if not a.no_check:
                     r.update(error_stats(y, x, w, K))

@@ -8,17 +8,22 @@ DUMP_DIR holds files written by `bin/conv ... --dump DUMP_DIR`:
   {H}x{W}_k{K}_in.bin           input image, H*W float32, row-major
   {H}x{W}_k{K}_k.bin            filter, K*K float32, row-major
   {H}x{W}_k{K}_{impl}_out.bin   output of one implementation, H*W float32
+With C > 1 input channels (bin/conv --C), the prefix is {H}x{W}_k{K}_c{C}_,
+the input is C*H*W floats and the filter C*K*K floats, both channel-major
+(CHW), and the output is still one H*W plane: the channels are summed.
 
 Every *_out.bin is checked against a float64 reference computed by a library
 we did not write:
-  scipy  scipy.signal.correlate2d(in, k, mode="same", boundary="fill")
-  torch  torch.nn.functional.conv2d(in, k, padding=K // 2) in float64
+  scipy  scipy.signal.correlate2d(in, k, mode="same", boundary="fill"),
+         summed over channels
+  torch  torch.nn.functional.conv2d(in, k, padding=K // 2) in float64,
+         with C input channels and one output channel
 Both compute cross-correlation with zero padding and a same-size output,
 which is our spec (README, "Specification"). `auto` uses SciPy if it is
 installed, else PyTorch.
 
 Pass criterion (same as bin/conv --check and tests/test_conv.cpp): no NaN or
-Inf, and at every pixel |got - ref| <= 2 * gamma(K*K) * sum|k * in|, with
+Inf, and at every pixel |got - ref| <= 2 * gamma(C*K*K) * sum|k * in|, with
 gamma(n) = n*u / (1 - n*u), u = 2^-24. err_ratio is the worst error divided by
 that bound, so it must be <= 1.
 
@@ -36,24 +41,26 @@ import sys
 
 import numpy as np
 
-OUT_RE = re.compile(r"^(\d+)x(\d+)_k(\d+)_(.+)_out\.bin$")
+OUT_RE = re.compile(r"^(\d+)x(\d+)_k(\d+)_(?:c(\d+)_)?(.+)_out\.bin$")
 U = 2.0 ** -24
 
 
 # ---------------------------------------------------------------------------
 # References: float64 cross-correlation, zero padding, same-size output.
+# img is (C, H, W) and k is (C, K, K); the result is (H, W), summed over C.
 
 def ref_scipy(img, k):
     from scipy.signal import correlate2d
-    return correlate2d(img, k, mode="same", boundary="fill", fillvalue=0.0)
+    return sum(correlate2d(img[ch], k[ch], mode="same", boundary="fill", fillvalue=0.0)
+               for ch in range(img.shape[0]))
 
 
 def ref_torch(img, k):
     import torch
     import torch.nn.functional as F
-    x = torch.from_numpy(np.ascontiguousarray(img, dtype=np.float64))[None, None]
-    w = torch.from_numpy(np.ascontiguousarray(k, dtype=np.float64))[None, None]
-    return F.conv2d(x, w, padding=k.shape[0] // 2)[0, 0].numpy()
+    x = torch.from_numpy(np.ascontiguousarray(img, dtype=np.float64))[None]
+    w = torch.from_numpy(np.ascontiguousarray(k, dtype=np.float64))[None]
+    return F.conv2d(x, w, padding=k.shape[-1] // 2)[0, 0].numpy()
 
 
 def pick_reference(name):
@@ -98,24 +105,26 @@ def check_reference(ref):
                         y, x = r + i0 - R, c + j0 - R
                         if 0 <= y < H and 0 <= x < W:
                             want[r, c] = img[y, x]
-                if not np.array_equal(ref(img, k), want):
+                if not np.array_equal(ref(img[None], k[None]), want):
                     fail(f"single tap at ({i0},{j0}), K={K}, image {H}x{W}")
 
-    # Random filter against a direct loop over the spec's formula.
-    for H, W, K in ((7, 5, 3), (11, 13, 7)):
-        img = rng.uniform(-1, 1, (H, W))
-        k = rng.uniform(-1, 1, (K, K))
+    # Random filter against a direct loop over the spec's formula, with one
+    # and with several input channels (each channel has its own filter slice).
+    for C, H, W, K in ((1, 7, 5, 3), (1, 11, 13, 7), (3, 7, 5, 3), (4, 6, 9, 5)):
+        img = rng.uniform(-1, 1, (C, H, W))
+        k = rng.uniform(-1, 1, (C, K, K))
         R = K // 2
         want = np.zeros((H, W))
-        for r in range(H):
-            for c in range(W):
-                for i in range(K):
-                    for j in range(K):
-                        y, x = r + i - R, c + j - R
-                        if 0 <= y < H and 0 <= x < W:
-                            want[r, c] += k[i, j] * img[y, x]
+        for ch in range(C):
+            for r in range(H):
+                for c in range(W):
+                    for i in range(K):
+                        for j in range(K):
+                            y, x = r + i - R, c + j - R
+                            if 0 <= y < H and 0 <= x < W:
+                                want[r, c] += k[ch, i, j] * img[ch, y, x]
         if not np.allclose(ref(img, k), want, rtol=0, atol=1e-12):
-            fail(f"random filter, K={K}, image {H}x{W}")
+            fail(f"random filter, C={C}, K={K}, image {H}x{W}")
 
 
 # ---------------------------------------------------------------------------
@@ -131,9 +140,8 @@ def load(path, count):
     return np.fromfile(path, dtype=np.float32, count=count), None
 
 
-def error_stats(got, ref, scale, K):
-    """Mirrors compare() in include/utils.h."""
-    n = K * K
+def error_stats(got, ref, scale, n):
+    """Mirrors compare() in include/utils.h. n is the number of terms per pixel, C*K*K."""
     gamma = n * U / (1.0 - n * U)
     got = got.astype(np.float64)
     finite = np.isfinite(got) & np.isfinite(ref)
@@ -178,31 +186,31 @@ def main():
     print(f"reference: {label} (float64), checked against known answers")
     print(f"{'output':40s} {'err_ratio':>10s} {'max_abs':>10s} {'max_rel':>10s} {'nonfinite':>9s}  result")
 
-    cache = {}  # (H, W, K) -> (ref, scale); several implementations share inputs
+    cache = {}  # (H, W, K, C) -> (ref, scale); several implementations share inputs
     n_fail = n_bad = 0
     for name in outs:
-        H, W, K, impl = OUT_RE.match(name).groups()
-        H, W, K = int(H), int(W), int(K)
-        prefix = os.path.join(a.dump_dir, f"{H}x{W}_k{K}_")
+        H, W, K, C, impl = OUT_RE.match(name).groups()
+        H, W, K, C = int(H), int(W), int(K), int(C or 1)
+        prefix = os.path.join(a.dump_dir, f"{H}x{W}_k{K}_" + (f"c{C}_" if C != 1 else ""))
 
-        if (H, W, K) not in cache:
-            img, err = load(prefix + "in.bin", H * W)
-            k, err2 = load(prefix + "k.bin", K * K) if err is None else (None, None)
+        if (H, W, K, C) not in cache:
+            img, err = load(prefix + "in.bin", C * H * W)
+            k, err2 = load(prefix + "k.bin", C * K * K) if err is None else (None, None)
             if err or err2:
                 print(f"{name:40s} ERROR: {err or err2}")
                 n_bad += 1
                 continue
-            img = img.reshape(H, W).astype(np.float64)
-            k = k.reshape(K, K).astype(np.float64)
-            cache[(H, W, K)] = (ref(img, k), ref(np.abs(img), np.abs(k)))
-        want, scale = cache[(H, W, K)]
+            img = img.reshape(C, H, W).astype(np.float64)
+            k = k.reshape(C, K, K).astype(np.float64)
+            cache[(H, W, K, C)] = (ref(img, k), ref(np.abs(img), np.abs(k)))
+        want, scale = cache[(H, W, K, C)]
 
         got, err = load(os.path.join(a.dump_dir, name), H * W)
         if err:
             print(f"{name:40s} ERROR: {err}")
             n_bad += 1
             continue
-        e = error_stats(got.reshape(H, W), want, scale, K)
+        e = error_stats(got.reshape(H, W), want, scale, C * K * K)
         ok = e["nonfinite"] == 0 and e["err_ratio"] <= 1.0
         n_fail += not ok
         print(f"{name:40s} {e['err_ratio']:10.3e} {e['max_abs']:10.3e} {e['max_rel']:10.3e} "

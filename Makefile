@@ -5,15 +5,15 @@ NVCC      ?= nvcc
 NVCCFLAGS ?= -O3 -std=c++17 -Xcompiler -Wall,-Wextra
 
 BIN := bin
-CPU_SRCS := src/main.cpp src/conv2d_seq.cpp
-TEST_SRCS := tests/test_conv.cpp src/conv2d_seq.cpp
+CPU_SRCS := src/main.cpp src/seq/conv2d_seq.cpp
+TEST_SRCS := tests/test_conv.cpp src/seq/conv2d_seq.cpp
 HEADERS := include/conv2d.h include/utils.h
 
 # OpenMP variants: omp, omp_simd, omp_blocked
 OMP_VARIANTS := omp omp_simd omp_blocked
-OMP_BUILT    := $(strip $(foreach v,$(OMP_VARIANTS),$(if $(wildcard src/conv2d_$(v).cpp),$(v))))
+OMP_BUILT    := $(strip $(foreach v,$(OMP_VARIANTS),$(if $(wildcard src/omp/conv2d_$(v).cpp),$(v))))
 ifneq ($(OMP_BUILT),)
-  OMP_SRCS  := $(OMP_BUILT:%=src/conv2d_%.cpp)
+  OMP_SRCS  := $(OMP_BUILT:%=src/omp/conv2d_%.cpp)
   CPU_SRCS  += $(OMP_SRCS)
   TEST_SRCS += $(OMP_SRCS)
   OMPFLAGS  := -fopenmp $(foreach v,$(OMP_BUILT),-DCONV_HAVE_$(shell echo $(v) | tr a-z A-Z))
@@ -30,8 +30,10 @@ endif
 
 # External check (make validate): bin/conv dumps its output for each shape
 # and implementation, then validation/validate.py compares every output with
-# SciPy (or PyTorch). Shapes are HxWxK. Implementations default to seq, plus
-# cuda when it is built in.
+# SciPy (or PyTorch). Shapes are HxWxK, or HxWxKxC for C input channels.
+# Implementations default to seq, plus cuda when it is built in. Shapes with
+# C > 1 run only the implementations in VALIDATE_MC_IMPLS that are also in
+# VALIDATE_IMPLS (multi-channel input is seq-only so far).
 #
 # `make test` runs it after the unit tests. VALIDATE=auto (default) runs it
 # if $(PYTHON) has numpy and scipy (or torch) and otherwise prints SKIPPED;
@@ -40,8 +42,10 @@ endif
 VALIDATE        ?= auto
 PYTHON          ?= python3
 VALIDATE_DIR    ?= data/validate
-VALIDATE_SHAPES ?= 2048x2048x3 2048x2048x5 2048x2048x7 1531x2777x7
+VALIDATE_SHAPES ?= 2048x2048x3 2048x2048x5 2048x2048x7 1531x2777x7 \
+                   1024x768x5x3 257x263x7x16
 VALIDATE_IMPLS  ?= seq $(if $(filter 1,$(CUDA)),cuda)
+VALIDATE_MC_IMPLS ?= seq
 
 .PHONY: all test validate clean
 
@@ -53,10 +57,10 @@ $(BIN)/conv: $(CPU_SRCS) $(CUDA_OBJ) $(HEADERS) | $(BIN)
 $(BIN)/test_conv: $(TEST_SRCS) $(CUDA_OBJ) $(HEADERS) | $(BIN)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OMPFLAGS) $(CUDAFLAGS) $(TEST_SRCS) $(CUDA_OBJ) $(CUDA_LIBS) -o $@
 
-$(BIN)/conv2d_cuda.o: src/conv2d_cuda.cu include/conv2d.h | $(BIN)
+$(BIN)/conv2d_cuda.o: src/cuda/conv2d_cuda.cu include/conv2d.h | $(BIN)
 	$(NVCC) $(CPPFLAGS) $(NVCCFLAGS) -c $< -o $@
 
-$(BIN)/conv2d_cuda_variants.o: src/conv2d_cuda_variants.cu include/conv2d.h | $(BIN)
+$(BIN)/conv2d_cuda_variants.o: src/cuda/conv2d_cuda_variants.cu include/conv2d.h | $(BIN)
 	$(NVCC) $(CPPFLAGS) $(NVCCFLAGS) -Xcompiler -pthread -c $< -o $@
 
 test: $(BIN)/test_conv
@@ -80,10 +84,15 @@ validate: $(BIN)/conv
 	mkdir -p $(VALIDATE_DIR)
 	rm -f $(VALIDATE_DIR)/*.bin
 	@set -e; for s in $(VALIDATE_SHAPES); do \
-	  H=$${s%%x*}; rest=$${s#*x}; W=$${rest%%x*}; K=$${rest#*x}; \
+	  H=$${s%%x*}; rest=$${s#*x}; W=$${rest%%x*}; rest=$${rest#*x}; \
+	  K=$${rest%%x*}; C=1; \
+	  case $$rest in *x*) C=$${rest#*x};; esac; \
 	  for impl in $(VALIDATE_IMPLS); do \
-	    echo "  $$impl $${H}x$${W} K=$$K"; \
-	    ./$(BIN)/conv --impl $$impl --H $$H --W $$W --K $$K \
+	    if [ "$$C" != 1 ]; then \
+	      case " $(VALIDATE_MC_IMPLS) " in *" $$impl "*) ;; *) continue;; esac; \
+	    fi; \
+	    echo "  $$impl $${H}x$${W} K=$$K C=$$C"; \
+	    ./$(BIN)/conv --impl $$impl --H $$H --W $$W --K $$K --C $$C \
 	      --iters 1 --warmup 0 --dump $(VALIDATE_DIR) > /dev/null; \
 	  done; \
 	done

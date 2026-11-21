@@ -1,14 +1,20 @@
 // Common interface for all 2D convolution implementations.
 //
 // Operation (see README): cross-correlation, zero padding, same-size output.
-//   out[r][c] = sum_{i,j} k[i][j] * in[r + i - R][c + j - R],  R = K / 2
+//   out[r][c] = sum_{ch,i,j} k[ch][i][j] * in[ch][r + i - R][c + j - R],  R = K / 2
 // All arrays are row-major FP32. K must be odd.
+//
+// Multi-channel input uses CHW layout: `in` is C planes of H*W floats and `k`
+// is C slices of K*K floats, one per input channel. The output is a single
+// H*W plane; the channels are summed. The single-channel implementations
+// below are the C = 1 case and take no C argument.
 #pragma once
 
 #include <cstddef>  // std::size_t, used by convolve()
 
+// Sums each output pixel over channel, then filter row, then filter column.
 void conv2d_seq(const float* in, float* out, const float* k,
-                int H, int W, int K);
+                int C, int H, int W, int K);
 
 // OpenMP versions use OMP_NUM_THREADS / OMP_SCHEDULE (or omp_set_*) for
 // their row-parallel loops with schedule(runtime).
@@ -35,7 +41,7 @@ void convolve(
     std::size_t m
 );
 // ---------------------------------------------------------------------------
-// CUDA version (src/conv2d_cuda.cu). Every function below prints the error
+// CUDA version (src/cuda/conv2d_cuda.cu). Every function below prints the error
 // and exits if any CUDA call fails.
 
 // Same interface as the CPU versions: host pointers in and out. Allocates
@@ -69,7 +75,7 @@ CudaTimes cuda_conv_run(const CudaConv& c, const float* in, float* out,
 // Check whether a block and its grid fit the GPU's launch limits.
 bool cuda_block_supported(int H, int W, int bx, int by);
 
-// Additional single-channel CUDA experiments (src/conv2d_cuda_variants.cu).
+// Additional single-channel CUDA experiments (src/cuda/conv2d_cuda_variants.cu).
 // Unlike the functions above, these throw std::exception on errors.
 enum class CudaVariant {
     Tiled,           // `cuda_opt`: shared-memory image tile, global-memory filter

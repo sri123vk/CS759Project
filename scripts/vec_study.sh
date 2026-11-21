@@ -88,7 +88,7 @@ build() {
     make --no-print-directory CUDA=0 BIN="$bin" \
         CXXFLAGS="$flags -fopt-info-vec-optimized=$report" "$bin/conv" > /dev/null
     # Keep only lines about the implementations, not the driver or headers.
-    grep -E '^src/conv2d_' "$report" | sort -u > "$OUT/vec_$name.txt" || true
+    grep -E '^src/([a-z]+/)?conv2d_' "$report" | sort -u > "$OUT/vec_$name.txt" || true
     rm -f "$report"
 
     # "loop vectorized" can be misleading for a sum into one float: without

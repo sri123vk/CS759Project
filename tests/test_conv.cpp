@@ -16,6 +16,9 @@
 //   combinations /<bx>x<by>
 //                                         when built with -DCONV_HAVE_CUDA_VARIANTS
 //
+// Most tests use one input channel. The multi-channel tests (C > 1) run only
+// on implementations marked `multichannel` in all_impls(); for now, seq.
+//
 // Exit status: 0 if every check passes, 1 if any fails, 2 on bad usage.
 
 #include <algorithm>
@@ -38,8 +41,18 @@
 
 namespace {
 
-using ConvFn = std::function<void(const float*, float*, const float*, int, int, int)>;
+// (in, out, k, C, H, W, K), CHW layout.
+using ConvFn = std::function<void(const float*, float*, const float*, int, int, int, int)>;
+using SingleChannelFn = std::function<void(const float*, float*, const float*, int, int, int)>;
 using Image = std::vector<float>;
+
+// Adapts a single-channel implementation. It is only called with C == 1.
+// Unused in a build with neither OpenMP nor CUDA.
+[[maybe_unused]] ConvFn single_channel(SingleChannelFn f) {
+    return [f](const float* in, float* out, const float* k, int /*C*/, int H, int W, int K) {
+        f(in, out, k, H, W, K);
+    };
+}
 
 const float kNaN = std::numeric_limits<float>::quiet_NaN();
 
@@ -60,11 +73,12 @@ struct Impl {
     ConvFn fn;
     std::function<void()> setup;  // runs before every call (e.g. OpenMP settings)
     bool bitwise_vs_seq;          // output must match conv2d_seq bit for bit
+    bool multichannel = false;    // accepts C > 1; otherwise only tested with C == 1
 };
 
 std::vector<Impl> all_impls() {
     std::vector<Impl> v;
-    v.push_back({"seq", conv2d_seq, [] {}, false});
+    v.push_back({"seq", conv2d_seq, [] {}, false, true});
 #ifdef CONV_HAVE_ANY_OMP
     // Every OpenMP version runs under every schedule and thread count. An odd
     // thread count gives uneven row splits; dynamic and guided scheduling
@@ -80,7 +94,7 @@ std::vector<Impl> all_impls() {
 #else
     const bool vector_bitwise = true;
 #endif
-    const struct { const char* name; ConvFn fn; bool bitwise; } omps[] = {
+    const struct { const char* name; SingleChannelFn fn; bool bitwise; } omps[] = {
 #ifdef CONV_HAVE_OMP
         {"omp", conv2d_omp, true},
 #endif
@@ -103,7 +117,7 @@ std::vector<Impl> all_impls() {
         for (const auto& s : scheds) {
             for (int t : threads) {
                 const omp_sched_t kind = s.kind;
-                v.push_back({fmt("%s/%s/t%d", o.name, s.name, t), o.fn,
+                v.push_back({fmt("%s/%s/t%d", o.name, s.name, t), single_channel(o.fn),
                              [t, kind] { omp_set_num_threads(t); omp_set_schedule(kind, 0); },
                              o.bitwise});
             }
@@ -115,16 +129,17 @@ std::vector<Impl> all_impls() {
     // cuda/32x8 is the one-call conv2d_cuda(); the rest go through the
     // benchmark path (alloc / run / free) with the block shapes we sweep,
     // plus 7x3, which leaves partial blocks along every edge.
-    v.push_back({"cuda/32x8", conv2d_cuda, [] {}, false});
+    v.push_back({"cuda/32x8", single_channel(conv2d_cuda), [] {}, false});
     const int blocks[][2] = {{8, 8}, {16, 16}, {32, 32}, {128, 1}, {1, 256}, {7, 3}};
     for (const auto& b : blocks) {
         const int bx = b[0], by = b[1];
         v.push_back({fmt("cuda/%dx%d", bx, by),
-                     [bx, by](const float* in, float* out, const float* k, int H, int W, int K) {
+                     single_channel([bx, by](const float* in, float* out, const float* k,
+                                             int H, int W, int K) {
                          CudaConv c = cuda_conv_alloc(H, W, K);
                          cuda_conv_run(c, in, out, k, bx, by);
                          cuda_conv_free(c);
-                     },
+                     }),
                      [] {}, false});
     }
 #endif
@@ -147,8 +162,8 @@ std::vector<Impl> all_impls() {
             const int bx = block[0], by = block[1];
             const CudaVariant variant = item.variant;
             v.push_back({fmt("%s/%dx%d", item.name, bx, by),
-                [bx, by, variant](const float* in, float* out, const float* k,
-                                  int H, int W, int K) {
+                single_channel([bx, by, variant](const float* in, float* out, const float* k,
+                                                 int H, int W, int K) {
                     CudaConv c = cuda_conv_alloc(H, W, K);
                     try {
                         cuda_conv_run_variant(c, in, out, k, bx, by, variant);
@@ -157,7 +172,7 @@ std::vector<Impl> all_impls() {
                         throw;
                     }
                     cuda_conv_free(c);
-                },
+                }),
                 [] {}, false});
         }
     }
@@ -175,22 +190,25 @@ constexpr float kGuardVal = -12345.0f;
 // Runs one implementation. The output starts as NaN, so unwritten pixels
 // fail later comparisons, and is surrounded by guard values, so writes
 // past either end are caught. Returns "" or a description of what went wrong.
+// `in` holds C planes of H*W and `k` holds C slices of K*K (CHW).
 std::string run(const Impl& im, const Image& in, const Image& k,
-                int H, int W, int K, Image& out) {
+                int C, int H, int W, int K, Image& out) {
     const size_t n = (size_t)H * W;
+    if (in.size() != (size_t)C * n || k.size() != (size_t)C * K * K)
+        return "test bug: input or filter size does not match C, H, W, K";
     Image buf(n + 2 * kGuard, kGuardVal);
     std::fill(buf.begin() + kGuard, buf.begin() + kGuard + n, kNaN);
     const Image in_before = in, k_before = k;
 
     im.setup();
-    im.fn(in.data(), buf.data() + kGuard, k.data(), H, W, K);
+    im.fn(in.data(), buf.data() + kGuard, k.data(), C, H, W, K);
 
     out.assign(buf.begin() + kGuard, buf.begin() + kGuard + n);
     for (size_t i = 0; i < kGuard; ++i) {
         if (buf[i] != kGuardVal) return "wrote before the start of the output buffer";
         if (buf[kGuard + n + i] != kGuardVal) return "wrote past the end of the output buffer";
     }
-    if (std::memcmp(in.data(), in_before.data(), n * sizeof(float)) != 0)
+    if (std::memcmp(in.data(), in_before.data(), in.size() * sizeof(float)) != 0)
         return "modified the input image";
     if (std::memcmp(k.data(), k_before.data(), k.size() * sizeof(float)) != 0)
         return "modified the filter";
@@ -218,19 +236,21 @@ std::string first_mismatch(const Image& want, const Image& got, int W, bool bitw
 }
 
 // Straightforward reference: double accumulation, explicit bounds checks,
-// no shared code with the implementations.
-Image reference(const Image& in, const Image& k, int H, int W, int K) {
+// no shared code with the implementations. CHW input, C channels summed.
+Image reference(const Image& in, const Image& k, int C, int H, int W, int K) {
     const int R = K / 2;
     Image out((size_t)H * W);
     for (int r = 0; r < H; ++r)
         for (int c = 0; c < W; ++c) {
             double acc = 0.0;
-            for (int i = 0; i < K; ++i)
-                for (int j = 0; j < K; ++j) {
-                    const int y = r + i - R, x = c + j - R;
-                    if (y >= 0 && y < H && x >= 0 && x < W)
-                        acc += (double)k[i * K + j] * in[(size_t)y * W + x];
-                }
+            for (int ch = 0; ch < C; ++ch)
+                for (int i = 0; i < K; ++i)
+                    for (int j = 0; j < K; ++j) {
+                        const int y = r + i - R, x = c + j - R;
+                        if (y >= 0 && y < H && x >= 0 && x < W)
+                            acc += (double)k[((size_t)ch * K + i) * K + j] *
+                                   in[((size_t)ch * H + y) * W + x];
+                    }
             out[(size_t)r * W + c] = (float)acc;
         }
     return out;
@@ -246,6 +266,9 @@ public:
           checks_(impls_.size()), fails_(impls_.size()), group_fails_(impls_.size()) {}
 
     const std::vector<Impl>& impls() const { return impls_; }
+
+    // Whether impl i can be run with C input channels.
+    bool runs_with(size_t i, int C) const { return C == 1 || impls_[i].multichannel; }
 
     void begin_group(const char* name) {
         end_group();
@@ -267,12 +290,14 @@ public:
                         test.c_str(), err.c_str());
     }
 
-    // Every implementation must reproduce want exactly (value equality).
+    // Every implementation that supports C channels must reproduce want
+    // exactly (value equality).
     void expect_exact(const std::string& test, const Image& in, const Image& k,
-                      int H, int W, int K, const Image& want) {
+                      int C, int H, int W, int K, const Image& want) {
         Image out;
         for (size_t i = 0; i < impls_.size(); ++i) {
-            std::string err = run(impls_[i], in, k, H, W, K, out);
+            if (!runs_with(i, C)) continue;
+            std::string err = run(impls_[i], in, k, C, H, W, K, out);
             if (err.empty()) err = first_mismatch(want, out, W, false);
             record(i, test, err);
         }
@@ -326,7 +351,7 @@ void test_identity(Tester& t) {
             Image in((size_t)H * W), k((size_t)K * K, 0.0f);
             fill_random(in, seed_for(H, W, K));
             k[(K / 2) * K + K / 2] = 1.0f;
-            t.expect_exact(fmt("%dx%d K=%d", H, W, K), in, k, H, W, K, in);
+            t.expect_exact(fmt("%dx%d K=%d", H, W, K), in, k, 1, H, W, K, in);
         }
     }
 }
@@ -353,7 +378,7 @@ void test_shift(Tester& t) {
                                 want[(size_t)r * W + c] = in[(size_t)y * W + x];
                         }
                     t.expect_exact(fmt("%dx%d K=%d tap=(%d,%d)", H, W, K, i0, j0),
-                                   in, k, H, W, K, want);
+                                   in, k, 1, H, W, K, want);
                 }
         }
     }
@@ -383,7 +408,7 @@ void test_impulse(Tester& t) {
                             want[(size_t)r * W + c] = k[i * K + j];
                     }
                 t.expect_exact(fmt("%dx%d K=%d impulse=(%d,%d)", H, W, K, py, px),
-                               in, k, H, W, K, want);
+                               in, k, 1, H, W, K, want);
             }
         }
     }
@@ -406,7 +431,7 @@ void test_ones(Tester& t) {
                     const int cols = std::min(c + R, W - 1) - std::max(c - R, 0) + 1;
                     want[(size_t)r * W + c] = (float)(rows * cols);
                 }
-            t.expect_exact(fmt("%dx%d K=%d", H, W, K), in, k, H, W, K, want);
+            t.expect_exact(fmt("%dx%d K=%d", H, W, K), in, k, 1, H, W, K, want);
         }
     }
 }
@@ -416,40 +441,117 @@ void test_ones(Tester& t) {
 // (same criterion as the driver's --check), and bit-identical to seq where
 // the implementation promises that.
 
+// One random C-channel problem, checked on every implementation that
+// supports C channels.
+void check_random(Tester& t, int C, int H, int W, int K, const std::string& test) {
+    Image in((size_t)C * H * W), k((size_t)C * K * K), seq_out((size_t)H * W);
+    fill_random(in, seed_for(H, W, K) + 7u * (C - 1));
+    fill_random(k, seed_for(K, K, H) + 7u * (C - 1));
+    const Image ref = reference(in, k, C, H, W, K);
+    const std::vector<double> scale = sum_abs_terms(in, k, C, H, W, K);
+    conv2d_seq(in.data(), seq_out.data(), k.data(), C, H, W, K);
+
+    Image out;
+    for (size_t i = 0; i < t.impls().size(); ++i) {
+        if (!t.runs_with(i, C)) continue;
+        const Impl& im = t.impls()[i];
+        std::string err = run(im, in, k, C, H, W, K, out);
+        if (err.empty()) {
+            const ErrStats e = compare(ref, out, scale, (long long)C * K * K);
+            if (!within_tol(e))
+                err = fmt("err_ratio=%.3g (must be <= 1), nonfinite=%zu, max_abs=%.3g",
+                          e.max_ratio, e.nonfinite, e.max_abs);
+        }
+        if (err.empty() && im.bitwise_vs_seq) {
+            err = first_mismatch(seq_out, out, W, true);
+            if (!err.empty()) err = "not bit-identical to seq " + err;
+        }
+        t.record(i, test, err);
+    }
+}
+
 void test_random(Tester& t) {
     t.begin_group("random data: within FP32 error bound of double reference");
     // Tiny, thin, non-square, odd, prime and not-a-multiple-of-block shapes.
     const int shapes[][2] = {{1, 1}, {1, 17}, {17, 1}, {2, 2}, {3, 3}, {5, 7},
                              {7, 5}, {31, 33}, {33, 65}, {64, 64}, {257, 263}, {1000, 1000}};
+    for (const auto& s : shapes)
+        for (int K : {1, 3, 5, 7})
+            check_random(t, 1, s[0], s[1], K, fmt("%dx%d K=%d", s[0], s[1], K));
+}
+
+// ---------------------------------------------------------------------------
+// Multi-channel input (C > 1, CHW). Run only on implementations marked
+// multichannel in all_impls().
+
+// Exact cases, built so that every output is a single product with 1 or a
+// sum of small integers, so any summation order gives the same result.
+void test_multichannel_exact(Tester& t) {
+    t.begin_group("multi-channel: channel selection, impulse, all-ones");
+    const int shapes[][2] = {{9, 13}, {4, 6}, {1, 1}};
     for (const auto& s : shapes) {
         const int H = s[0], W = s[1];
-        for (int K : {1, 3, 5, 7}) {
-            Image in((size_t)H * W), k((size_t)K * K), seq_out((size_t)H * W);
-            fill_random(in, seed_for(H, W, K));
-            fill_random(k, seed_for(K, K, H));
-            const Image ref = reference(in, k, H, W, K);
-            const std::vector<double> scale = sum_abs_terms(in, k, H, W, K);
-            conv2d_seq(in.data(), seq_out.data(), k.data(), H, W, K);
+        const size_t plane = (size_t)H * W;
+        for (int C : {2, 3, 5}) {
+            for (int K : {1, 3, 5}) {
+                const int R = K / 2;
+                const size_t slice = (size_t)K * K;
 
-            const std::string test = fmt("%dx%d K=%d", H, W, K);
-            Image out;
-            for (size_t i = 0; i < t.impls().size(); ++i) {
-                const Impl& im = t.impls()[i];
-                std::string err = run(im, in, k, H, W, K, out);
-                if (err.empty()) {
-                    const ErrStats e = compare(ref, out, scale, K);
-                    if (!within_tol(e))
-                        err = fmt("err_ratio=%.3g (must be <= 1), nonfinite=%zu, max_abs=%.3g",
-                                  e.max_ratio, e.nonfinite, e.max_abs);
+                // Selection: only filter slice ch0 is nonzero (center tap = 1),
+                // so the output must be input channel ch0. Catches a wrong
+                // input-channel offset.
+                Image in((size_t)C * plane);
+                fill_random(in, seed_for(H, W, K) + C);
+                for (int ch0 = 0; ch0 < C; ++ch0) {
+                    Image k((size_t)C * slice, 0.0f);
+                    k[ch0 * slice + (size_t)R * K + R] = 1.0f;
+                    const Image want(in.begin() + ch0 * plane, in.begin() + (ch0 + 1) * plane);
+                    t.expect_exact(fmt("select %dx%d C=%d K=%d ch=%d", H, W, C, K, ch0),
+                                   in, k, C, H, W, K, want);
                 }
-                if (err.empty() && im.bitwise_vs_seq) {
-                    err = first_mismatch(seq_out, out, W, true);
-                    if (!err.empty()) err = "not bit-identical to seq " + err;
+
+                // Impulse in channel ch0 only: the output around it is filter
+                // slice ch0 rotated 180 degrees. Catches pairing an input
+                // channel with the wrong filter slice.
+                Image k((size_t)C * slice);
+                fill_random(k, seed_for(K, C, H));
+                const int py = H / 2, px = W / 2;
+                for (int ch0 = 0; ch0 < C; ++ch0) {
+                    Image imp((size_t)C * plane, 0.0f), want(plane, 0.0f);
+                    imp[ch0 * plane + (size_t)py * W + px] = 1.0f;
+                    for (int r = 0; r < H; ++r)
+                        for (int c = 0; c < W; ++c) {
+                            const int i = py - r + R, j = px - c + R;
+                            if (i >= 0 && i < K && j >= 0 && j < K)
+                                want[(size_t)r * W + c] = k[ch0 * slice + (size_t)i * K + j];
+                        }
+                    t.expect_exact(fmt("impulse %dx%d C=%d K=%d ch=%d", H, W, C, K, ch0),
+                                   imp, k, C, H, W, K, want);
                 }
-                t.record(i, test, err);
+
+                // All ones: C times the in-bounds tap count. Catches skipped
+                // or repeated channels.
+                Image ones_in((size_t)C * plane, 1.0f), ones_k((size_t)C * slice, 1.0f), want(plane);
+                for (int r = 0; r < H; ++r)
+                    for (int c = 0; c < W; ++c) {
+                        const int rows = std::min(r + R, H - 1) - std::max(r - R, 0) + 1;
+                        const int cols = std::min(c + R, W - 1) - std::max(c - R, 0) + 1;
+                        want[(size_t)r * W + c] = (float)(C * rows * cols);
+                    }
+                t.expect_exact(fmt("ones %dx%d C=%d K=%d", H, W, C, K),
+                               ones_in, ones_k, C, H, W, K, want);
             }
         }
     }
+}
+
+void test_multichannel_random(Tester& t) {
+    t.begin_group("multi-channel random data: within FP32 error bound of double reference");
+    const int shapes[][2] = {{1, 1}, {1, 17}, {5, 7}, {31, 33}, {64, 64}, {257, 263}};
+    for (const auto& s : shapes)
+        for (int C : {2, 3, 16})
+            for (int K : {1, 3, 5, 7})
+                check_random(t, C, s[0], s[1], K, fmt("%dx%d C=%d K=%d", s[0], s[1], C, K));
 }
 
 // Same input three times must give the same bits. Catches data races and
@@ -462,9 +564,9 @@ void test_repeatable(Tester& t) {
     fill_random(k, seed_for(K, K, H));
     for (size_t i = 0; i < t.impls().size(); ++i) {
         Image first, out;
-        std::string err = run(t.impls()[i], in, k, H, W, K, first);
+        std::string err = run(t.impls()[i], in, k, 1, H, W, K, first);
         for (int rep = 1; rep < 3 && err.empty(); ++rep) {
-            err = run(t.impls()[i], in, k, H, W, K, out);
+            err = run(t.impls()[i], in, k, 1, H, W, K, out);
             if (err.empty()) {
                 err = first_mismatch(first, out, W, true);
                 if (!err.empty()) err = fmt("run %d differs from run 0 ", rep) + err;
@@ -509,6 +611,8 @@ int main(int argc, char** argv) {
     test_impulse(t);
     test_ones(t);
     test_random(t);
+    test_multichannel_exact(t);
+    test_multichannel_random(t);
     test_repeatable(t);
     return t.finish() ? 0 : 1;
 }

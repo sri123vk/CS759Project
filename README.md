@@ -16,21 +16,25 @@ shared-memory tiling, constant-memory filters, and multiple outputs per thread.
 Every implementation computes, with `R = K / 2`:
 
 ```
-out[r][c] = Σᵢ Σⱼ k[i][j] · in[r+i−R][c+j−R]
+out[r][c] = Σ_ch Σᵢ Σⱼ k[ch][i][j] · in[ch][r+i−R][c+j−R]
 ```
 
 | | |
 |---|---|
 | Operation | Cross-correlation (filter not flipped), as in image-processing and CNN libraries |
 | Precision | FP32 input, filter, output, and accumulator |
-| Layout | Row-major; pixel `(r, c)` at `in[r*W + c]` |
-| Filter | Square, positive odd `K`, centered; benchmarks commonly use 3, 5, and 7 |
+| Channels | `C` input channels, summed into one output channel. Only `seq` supports `C > 1` so far; every other implementation is the `C = 1` case |
+| Layout | Row-major, channel-major (CHW); pixel `(ch, r, c)` at `in[(ch*H + r)*W + c]`, filter tap `(ch, i, j)` at `k[(ch*K + i)*K + j]` |
+| Filter | Square, positive odd `K`, centered, one `K × K` slice per input channel; benchmarks commonly use 3, 5, and 7 |
 | Boundary | Zero padding; output is `H × W` |
-| Sum order | Filter row `i`, then column `j` |
+| Sum order | Channel `ch`, then filter row `i`, then column `j` |
 
-Common CPU and direct CUDA interface (`include/conv2d.h`):
+Interfaces (`include/conv2d.h`). The sequential version takes the channel
+count; the other CPU versions and the direct CUDA version are single-channel:
 
 ```cpp
+void conv2d_seq(const float* in, float* out, const float* k,
+                int C, int H, int W, int K);
 void conv2d_<variant>(const float* in, float* out, const float* k,
                       int H, int W, int K);
 ```
@@ -50,7 +54,7 @@ answers and an independent double-precision loop (`make test`). The separate
 By default, external validation selects `seq` and, when built, `cuda`; other
 variants can be included with `VALIDATE_IMPLS`.
 See [Tests](#tests). Pass: no NaN/Inf in the output, and at every pixel
-`|got − ref| ≤ 2·γ(K²)·Σ|k·in|` where `γ(n) = n·u / (1 − n·u)`, `u = 2⁻²⁴`.
+`|got − ref| ≤ 2·γ(C·K²)·Σ|k·in|` where `γ(n) = n·u / (1 − n·u)`, `u = 2⁻²⁴`.
 This is the standard FP32 dot-product error bound (Higham §3.1). It holds
 for any summation order, with or without FMA, so GPU results need not match
 bit-for-bit. The CSV reports `err_ratio` (worst error ÷ bound, pass ≤ 1);
@@ -88,6 +92,7 @@ report/       final report
 make                                         # builds bin/conv
 make -B CUDA=1 bin/conv bin/test_conv        # force a CUDA + OpenMP rebuild
 ./bin/conv --impl seq --size 1024 --K 5 --header
+./bin/conv --impl seq --size 1024 --K 5 --C 3 --check    # 3 input channels
 ./bin/conv --impl cuda --size 2048 --K 7 --block 16 16 --check
 ./bin/conv --impl cuda_opt --size 2048 --K 7 --block 32 8 --check
 ```
@@ -98,10 +103,11 @@ Use `make -B` after changing build options because Make may not detect changes
 in flags. On Euler, load an appropriate CUDA module before building and run
 CUDA tests and benchmarks on a GPU compute node.
 
-Options: `--size N` (or `--H`, `--W`), `--K`, `--iters`, `--warmup`,
+Options: `--size N` (or `--H`, `--W`), `--K`, `--C` (input channels,
+default 1; values above 1 are accepted only by `seq`), `--iters`, `--warmup`,
 `--block BX BY` (CUDA thread block, default 32 8), `--block auto`, `--check`, `--dump DIR`,
 `--header`. Output is one CSV row per run with columns
-`impl,H,W,K,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass`;
+`impl,H,W,K,C,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass`;
 CUDA-only columns are empty for CPU implementations.
 `--block auto` tries supported candidate shapes on the current workload and
 reports the selected shape and tuning time separately. Tuning is excluded from
@@ -159,7 +165,7 @@ Every test runs on every implementation that is compiled in:
 | Name | Built in when | Requirement |
 |---|---|---|
 | `seq` | Always | Within the error bound |
-| `omp`, `omp_simd`, `omp_blocked` with `static`, `dynamic`, or `guided` and multiple thread counts | Corresponding `src/conv2d_*.cpp` exists | Checked against the sequential and independent references |
+| `omp`, `omp_simd`, `omp_blocked` with `static`, `dynamic`, or `guided` and multiple thread counts | Corresponding `src/omp/conv2d_*.cpp` exists | Checked against the sequential and independent references |
 | `cuda/32x8` (the one-call `conv2d_cuda`), `cuda/8x8`, `16x16`, `32x32`, `128x1`, `1x256`, `7x3` | `nvcc` is on the PATH (`make CUDA=0` to skip) | Within the error bound (FMA changes the rounding). `7x3` leaves partial blocks along every edge |
 | `cuda_opt`, `cuda_const`, `cuda_tiled_const`, `cuda_multiout` with `32x8` or `7x3` | CUDA variants are compiled in | Within the error bound; `7x3` exercises partial blocks |
 
@@ -175,6 +181,8 @@ afterwards.
 | impulse | One pixel = 1, at the center and each corner | The filter rotated 180° | Convolution instead of cross-correlation, edge clipping |
 | ones | All-ones image and filter, including images smaller than the filter | Count of in-bounds taps | Zero-padding errors |
 | random | Uniform [−1, 1], 12 shapes (1×1, 1×17, 17×1, primes, 257×263, 1000×1000, …) × K = 1, 3, 5, 7 | Within the error bound of the double-precision loop | General arithmetic and indexing |
+| multi-channel exact (`seq` only) | C = 2, 3, 5: a filter that is nonzero in one slice only; an impulse in one channel only; all ones | That input channel; that filter slice rotated 180°; C × the in-bounds tap count | Wrong input-channel offset, input channel paired with the wrong filter slice, channels skipped or repeated |
+| multi-channel random (`seq` only) | Uniform [−1, 1], 6 shapes × C = 2, 3, 16 × K = 1, 3, 5, 7 | Within the error bound (with C·K² terms) of the double-precision loop | General multi-channel indexing |
 | repeatability | 513×517, K = 7, run 3 times | Identical bits every run | Data races, reads of uninitialized memory |
 
 The hand-derived cases use only small integers and products with 0 or 1, so
@@ -189,6 +197,9 @@ table gives the totals.
 `tests/test_conv.cpp` with a name, the function, an optional setup step run
 before each call, and whether the output must match `seq` bit for bit. Set
 that flag only if the implementation sums each pixel in `seq`'s order.
+Wrap a single-channel function with `single_channel(...)`. An implementation
+that takes a channel count can instead set the last field, `multichannel`,
+to `true` so that the multi-channel groups also run on it.
 
 ### External check (part of `make test`; on its own, `make validate`)
 
@@ -206,12 +217,18 @@ Requirements: Python 3 with NumPy and SciPy, or NumPy and PyTorch. Without SciPy
 (`--ref torch`). Settings, all optional:
 
 ```
-# VALIDATE_SHAPES: HxWxK; VALIDATE_IMPLS default: seq, plus cuda if built in
+# VALIDATE_SHAPES: HxWxK, or HxWxKxC for C input channels
+# VALIDATE_IMPLS default: seq, plus cuda if built in
+# VALIDATE_MC_IMPLS default: seq (the only ones run on shapes with C > 1)
 make validate PYTHON=python3 \
-              VALIDATE_SHAPES="2048x2048x3 1531x2777x7" \
+              VALIDATE_SHAPES="2048x2048x3 1531x2777x7 1024x768x5x3" \
               VALIDATE_IMPLS="seq cuda" \
               VALIDATE_DIR=data/validate
 ```
+
+The defaults include two multi-channel shapes, `1024x768x5x3` and
+`257x263x7x16`. Their dump files are prefixed `{H}x{W}_k{K}_c{C}_`.
+Single-channel dumps keep the `{H}x{W}_k{K}_` prefix.
 
 To validate all five CUDA variants, set
 `VALIDATE_IMPLS="seq cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout"`
@@ -224,7 +241,12 @@ status: 0 if all pass, 1 if any fail, 2 for missing or malformed files.
 
 ### Not hooked up yet
 
-- **`convolve()` in `src/conv2d_seq_opt_for_largesize.cpp`.** Not built or
+- **Multi-channel input is `seq`-only.** The OpenMP and CUDA versions are
+  single-channel, and `bin/conv` rejects `--C` above 1 for them. Multiple
+  output channels (`Cout`, one filter per output) are not implemented
+  anywhere. `plot.py` skips rows with `C != 1`, because its figures group by
+  H, W and K only.
+- **`convolve()` in `src/seq/conv2d_seq_opt_for_largesize.cpp`.** Not built or
   tested. Its signature differs (`size_t` dimensions, filter after the
   dimensions), so `all_impls()` needs a short wrapper for it.
 - **`--check` compares against `conv2d_seq`**, not an independent reference.

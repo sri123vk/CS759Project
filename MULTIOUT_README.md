@@ -13,7 +13,7 @@ The package contains six replacement project files, plus this guide:
 
 ```text
 include/conv2d.h
-src/conv2d_cuda_variants.cu
+src/cuda/conv2d_cuda_variants.cu
 src/main.cpp
 tests/test_conv.cpp
 scripts/bench.sh

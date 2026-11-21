@@ -99,6 +99,15 @@ def load(results):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     if "schedule" not in df:
         df["schedule"] = np.nan
+    # Input channels (bin/conv --C). Older CSVs have no C column: one channel.
+    df["C"] = pd.to_numeric(df["C"], errors="coerce").fillna(1) if "C" in df else 1.0
+    # The figures group by H, W and K only, so multi-channel rows would be
+    # mixed in with single-channel ones. Leave them out until they get plots.
+    multi = df["C"] != 1
+    if multi.any():
+        print(f"Skipping {int(multi.sum())} multi-channel rows (C != 1); not plotted yet",
+              file=sys.stderr)
+        df = df[~multi].copy()
     invalid = (df[["H", "W", "K", "median_ms"]].isna().any(axis=1) |
                ~np.isfinite(df[["H", "W", "K"]]).all(axis=1) |
                ~np.isfinite(df["median_ms"]) | (df["median_ms"] <= 0) |
@@ -110,7 +119,7 @@ def load(results):
         sys.exit("no valid benchmark timing rows")
     df["is_cuda"] = df.impl.str.startswith("cuda") | df.impl.str.startswith("torch_cudnn")
     df.loc[~np.isfinite(df.kernel_ms) | (df.kernel_ms <= 0), "kernel_ms"] = np.nan
-    df["flops"] = 2.0 * df.K ** 2 * df.H * df.W
+    df["flops"] = 2.0 * df.C * df.K ** 2 * df.H * df.W
     # Compute-only time: the kernel for GPU rows, the whole call for CPU rows.
     df["compute_ms"] = df.kernel_ms.where(df.is_cuda, df.median_ms)
     df.loc[~np.isfinite(df.compute_ms) | (df.compute_ms <= 0), "compute_ms"] = np.nan

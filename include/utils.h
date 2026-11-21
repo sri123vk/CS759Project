@@ -35,25 +35,29 @@ inline bool read_bin(const std::string& path, std::vector<float>& v) {
     return n == v.size();
 }
 
-// Per-pixel sum of |k[i][j] * in[y][x]| over the filter window (zero padding),
-// computed in double. This is the scale of the rounding error any FP32
-// implementation can make at that pixel, whatever its summation order.
+// Per-pixel sum of |k[ch][i][j] * in[ch][y][x]| over the filter window and
+// all C channels (CHW layout, zero padding), computed in double. This is the
+// scale of the rounding error any FP32 implementation can make at that
+// pixel, whatever its summation order.
 inline std::vector<double> sum_abs_terms(const std::vector<float>& in,
                                          const std::vector<float>& k,
-                                         int H, int W, int K) {
+                                         int C, int H, int W, int K) {
     const int R = K / 2;
-    std::vector<double> s((size_t)H * W, 0.0);
+    const size_t plane = (size_t)H * W, slice = (size_t)K * K;
+    std::vector<double> s(plane, 0.0);
     for (int r = 0; r < H; ++r) {
         for (int c = 0; c < W; ++c) {
             double acc = 0.0;
-            for (int i = 0; i < K; ++i) {
-                const int y = r + i - R;
-                if (y < 0 || y >= H) continue;
-                for (int j = 0; j < K; ++j) {
-                    const int x = c + j - R;
-                    if (x < 0 || x >= W) continue;
-                    acc += std::fabs((double)k[(size_t)i * K + j] *
-                                     (double)in[(size_t)y * W + x]);
+            for (int ch = 0; ch < C; ++ch) {
+                for (int i = 0; i < K; ++i) {
+                    const int y = r + i - R;
+                    if (y < 0 || y >= H) continue;
+                    for (int j = 0; j < K; ++j) {
+                        const int x = c + j - R;
+                        if (x < 0 || x >= W) continue;
+                        acc += std::fabs((double)k[ch * slice + (size_t)i * K + j] *
+                                         (double)in[ch * plane + (size_t)y * W + x]);
+                    }
                 }
             }
             s[(size_t)r * W + c] = acc;
@@ -71,8 +75,10 @@ struct ErrStats {
 
 // Compares got against ref pixel by pixel.
 //
-// Tolerance: a K*K-term FP32 dot product has error at most
-// gamma_n * sum|terms| with n = K*K and gamma_n = n*u / (1 - n*u),
+// n_terms is the number of products summed per output pixel: C*K*K.
+//
+// Tolerance: an n-term FP32 dot product has error at most
+// gamma_n * sum|terms| with gamma_n = n*u / (1 - n*u),
 // u = 2^-24 (Higham, Accuracy and Stability of Numerical Algorithms, sec. 3.1).
 // This holds for any summation order and with or without FMA. Both ref and
 // got carry such an error, so we allow twice that. A fixed relative tolerance
@@ -85,14 +91,14 @@ struct ErrStats {
 // would skip them, because every comparison with NaN is false.
 inline ErrStats compare(const std::vector<float>& ref,
                         const std::vector<float>& got,
-                        const std::vector<double>& scale, int K) {
+                        const std::vector<double>& scale, long long n_terms) {
     ErrStats e;
     if (ref.size() != got.size() || ref.size() != scale.size()) {
         e.max_ratio = INFINITY;
         return e;
     }
     const double u = std::ldexp(1.0, -24);
-    const double nu = (double)K * K * u;
+    const double nu = (double)n_terms * u;
     const double gamma = nu / (1.0 - nu);
 
     for (size_t i = 0; i < ref.size(); ++i) {

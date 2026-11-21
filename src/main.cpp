@@ -1,12 +1,14 @@
 // Benchmark driver.
 //
 // Usage:
-//   conv --impl NAME --size N [--K 3] [--iters 10] [--warmup 2]
+//   conv --impl NAME --size N [--K 3] [--C 1] [--iters 10] [--warmup 2]
+//        [--block BX BY|auto] [--check] [--dump DIR] [--header]
 //   CUDA variants include cuda_multiout_const, cuda_multiout_tiled, and
 //   cuda_multiout_tiled_const, alongside the existing implementations.
-//        [--block BX BY|auto] [--check] [--dump DIR] [--header]
 //
 // Prints one CSV row per run (use --header to print the column names first).
+// --C      input channels (CHW layout; output is one channel). Only seq
+//          supports C > 1 so far.
 // --block  CUDA thread-block shape (default 32 8); auto tunes candidates
 // --check  also runs the sequential version and compares against it
 // --dump   writes in/k/out as raw float32 files for the Python validator
@@ -36,6 +38,7 @@ namespace {
 struct Args {
     std::string impl = "seq";
     int H = 512, W = 512, K = 3;
+    int C = 1;  // input channels
     int iters = 10, warmup = 2;
     int bx = 32, by = 8;
     bool auto_block = false;
@@ -45,14 +48,19 @@ struct Args {
 
 void usage(const char* prog) {
     std::fprintf(stderr,
-        "usage: %s --impl NAME --size N [--H h --W w] [--K k]\n"
-        "          CPU:  seq omp omp_simd omp_blocked\n"
+        "usage: %s --impl NAME --size N [--H h --W w] [--K k] [--C c]\n"
+        "          CPU:  seq omp omp_simd omp_blocked   (--C > 1: seq only)\n"
         "          CUDA: cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout\n"
         "                cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const\n"
         "          [--iters n] [--warmup n] [--block bx by|auto]\n"
         "          [--check] [--dump dir] [--header]\n",
         prog);
     std::exit(1);
+}
+
+// Implementations that take a channel count. The rest are single-channel.
+bool supports_multichannel(const std::string& impl) {
+    return impl == "seq";
 }
 
 Args parse(int argc, char** argv) {
@@ -65,6 +73,7 @@ Args parse(int argc, char** argv) {
         else if (is("--H")) a.H = std::atoi(next());
         else if (is("--W")) a.W = std::atoi(next());
         else if (is("--K")) a.K = std::atoi(next());
+        else if (is("--C")) a.C = std::atoi(next());
         else if (is("--iters")) a.iters = std::atoi(next());
         else if (is("--warmup")) a.warmup = std::atoi(next());
         else if (is("--block")) {
@@ -86,8 +95,14 @@ Args parse(int argc, char** argv) {
         std::fprintf(stderr, "K must be a positive odd number\n");
         std::exit(1);
     }
-    if (a.H <= 0 || a.W <= 0 || a.iters <= 0 || a.warmup < 0 || a.bx <= 0 || a.by <= 0)
+    if (a.H <= 0 || a.W <= 0 || a.C <= 0 || a.iters <= 0 || a.warmup < 0 ||
+        a.bx <= 0 || a.by <= 0)
         usage(argv[0]);
+    if (a.C != 1 && !supports_multichannel(a.impl)) {
+        std::fprintf(stderr, "impl %s supports only --C 1 (multi-channel input: seq)\n",
+                     a.impl.c_str());
+        std::exit(1);
+    }
     return a;
 }
 
@@ -100,18 +115,28 @@ bool is_cuda_variant(const std::string& impl) {
            impl == "cuda_multiout_tiled" || impl == "cuda_multiout_tiled_const";
 }
 
-using ConvFn = void (*)(const float*, float*, const float*, int, int, int);
+// CPU implementations as called by the benchmark: (in, out, k, C, H, W, K).
+using ConvFn = void (*)(const float*, float*, const float*, int, int, int, int);
+using SingleChannelFn = void (*)(const float*, float*, const float*, int, int, int);
+
+// Adapts a single-channel implementation to ConvFn. parse() has already
+// rejected C != 1 for these.
+template <SingleChannelFn F>
+void single_channel(const float* in, float* out, const float* k,
+                    int /*C*/, int H, int W, int K) {
+    F(in, out, k, H, W, K);
+}
 
 ConvFn pick_cpu(const std::string& impl) {
     if (impl == "seq") return conv2d_seq;
 #ifdef CONV_HAVE_OMP
-    if (impl == "omp") return conv2d_omp;
+    if (impl == "omp") return single_channel<conv2d_omp>;
 #endif
 #ifdef CONV_HAVE_OMP_SIMD
-    if (impl == "omp_simd") return conv2d_omp_simd;
+    if (impl == "omp_simd") return single_channel<conv2d_omp_simd>;
 #endif
 #ifdef CONV_HAVE_OMP_BLOCKED
-    if (impl == "omp_blocked") return conv2d_omp_blocked;
+    if (impl == "omp_blocked") return single_channel<conv2d_omp_blocked>;
 #endif
     std::fprintf(stderr, "unknown impl: %s\n", impl.c_str());
     std::exit(1);
@@ -129,11 +154,11 @@ struct Timings {
 Timings bench_cpu(const Args& a, const std::vector<float>& in,
                   std::vector<float>& out, const std::vector<float>& k) {
     ConvFn fn = pick_cpu(a.impl);
-    for (int i = 0; i < a.warmup; ++i) fn(in.data(), out.data(), k.data(), a.H, a.W, a.K);
+    auto call = [&] { fn(in.data(), out.data(), k.data(), a.C, a.H, a.W, a.K); };
+    for (int i = 0; i < a.warmup; ++i) call();
     Timings t;
     t.call_ms.reserve(a.iters);
-    for (int i = 0; i < a.iters; ++i)
-        t.call_ms.push_back(time_ms([&] { fn(in.data(), out.data(), k.data(), a.H, a.W, a.K); }));
+    for (int i = 0; i < a.iters; ++i) t.call_ms.push_back(time_ms(call));
     return t;
 }
 
@@ -296,8 +321,9 @@ int main(int argc, char** argv) {
     const bool cuda = (a.impl == "cuda");
     const bool cuda_variant = is_cuda_variant(a.impl);
     const size_t n = (size_t)a.H * a.W;
+    // CHW: C input planes and C filter slices; one output plane.
     // out starts as NaN so any pixel an implementation never writes fails --check.
-    std::vector<float> in(n), k((size_t)a.K * a.K),
+    std::vector<float> in((size_t)a.C * n), k((size_t)a.C * a.K * a.K),
         out(n, std::numeric_limits<float>::quiet_NaN());
     fill_random(in, 759);
     fill_random(k, 42);
@@ -347,14 +373,17 @@ int main(int argc, char** argv) {
     bool pass = true;
     if (a.check) {
         std::vector<float> ref(n);
-        conv2d_seq(in.data(), ref.data(), k.data(), a.H, a.W, a.K);
-        err = compare(ref, out, sum_abs_terms(in, k, a.H, a.W, a.K), a.K);
+        conv2d_seq(in.data(), ref.data(), k.data(), a.C, a.H, a.W, a.K);
+        err = compare(ref, out, sum_abs_terms(in, k, a.C, a.H, a.W, a.K),
+                      (long long)a.C * a.K * a.K);
         pass = within_tol(err);
     }
 
     if (!a.dump_dir.empty()) {
+        // {H}x{W}_k{K}_ for one channel (unchanged), {H}x{W}_k{K}_c{C}_ otherwise.
         std::string base = a.dump_dir + "/" + std::to_string(a.H) + "x" +
-                           std::to_string(a.W) + "_k" + std::to_string(a.K) + "_";
+                           std::to_string(a.W) + "_k" + std::to_string(a.K) + "_" +
+                           (a.C != 1 ? "c" + std::to_string(a.C) + "_" : "");
         if (!write_bin(base + "in.bin", in) || !write_bin(base + "k.bin", k) ||
             !write_bin(base + a.impl + "_out.bin", out)) {
             std::fprintf(stderr, "failed to write dump files to %s\n", a.dump_dir.c_str());
@@ -365,11 +394,11 @@ int main(int argc, char** argv) {
     const std::string bx = (cuda || cuda_variant) ? std::to_string(a.bx) : "";
     const std::string by = (cuda || cuda_variant) ? std::to_string(a.by) : "";
     if (a.header)
-        std::printf("impl,H,W,K,bx,by,iters,median_ms,min_ms,"
+        std::printf("impl,H,W,K,C,bx,by,iters,median_ms,min_ms,"
                     "h2d_ms,kernel_ms,d2h_ms,alloc_ms,"
                     "max_abs_err,max_rel_err,err_ratio,nonfinite,pass\n");
-    std::printf("%s,%d,%d,%d,%s,%s,%d,%.4f,%.4f,%s,%s,%s,%s,%.3e,%.3e,%.3e,%zu,%d\n",
-                a.impl.c_str(), a.H, a.W, a.K, bx.c_str(), by.c_str(), a.iters,
+    std::printf("%s,%d,%d,%d,%d,%s,%s,%d,%.4f,%.4f,%s,%s,%s,%s,%.3e,%.3e,%.3e,%zu,%d\n",
+                a.impl.c_str(), a.H, a.W, a.K, a.C, bx.c_str(), by.c_str(), a.iters,
                 median(t.call_ms),
                 *std::min_element(t.call_ms.begin(), t.call_ms.end()),
                 field(t.h2d_ms).c_str(), field(t.kernel_ms).c_str(),
