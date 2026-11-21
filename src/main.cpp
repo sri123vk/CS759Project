@@ -7,8 +7,8 @@
 //   cuda_multiout_tiled_const, alongside the existing implementations.
 //
 // Prints one CSV row per run (use --header to print the column names first).
-// --C      input channels (CHW layout; output is one channel). Only seq
-//          supports C > 1 so far.
+// --C      input channels (CHW layout; output is one channel). seq and every
+//          CUDA implementation support C > 1; the OpenMP versions don't yet.
 // --block  CUDA thread-block shape (default 32 8); auto tunes candidates
 // --check  also runs the sequential version and compares against it
 // --dump   writes in/k/out as raw float32 files for the Python validator
@@ -49,18 +49,20 @@ struct Args {
 void usage(const char* prog) {
     std::fprintf(stderr,
         "usage: %s --impl NAME --size N [--H h --W w] [--K k] [--C c]\n"
-        "          CPU:  seq omp omp_simd omp_blocked   (--C > 1: seq only)\n"
+        "          CPU:  seq omp omp_simd omp_blocked\n"
         "          CUDA: cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout\n"
         "                cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const\n"
+        "          --C > 1 (multi-channel input): seq and all CUDA, not OpenMP\n"
         "          [--iters n] [--warmup n] [--block bx by|auto]\n"
         "          [--check] [--dump dir] [--header]\n",
         prog);
     std::exit(1);
 }
 
-// Implementations that take a channel count. The rest are single-channel.
+// Implementations that take a channel count: everything except the OpenMP
+// versions, which are single-channel.
 bool supports_multichannel(const std::string& impl) {
-    return impl == "seq";
+    return impl.rfind("omp", 0) != 0;
 }
 
 Args parse(int argc, char** argv) {
@@ -99,7 +101,7 @@ Args parse(int argc, char** argv) {
         a.bx <= 0 || a.by <= 0)
         usage(argv[0]);
     if (a.C != 1 && !supports_multichannel(a.impl)) {
-        std::fprintf(stderr, "impl %s supports only --C 1 (multi-channel input: seq)\n",
+        std::fprintf(stderr, "impl %s supports only --C 1 (the OpenMP versions are single-channel)\n",
                      a.impl.c_str());
         std::exit(1);
     }
@@ -176,7 +178,7 @@ Timings bench_cuda(const Args& a, const std::vector<float>& in,
 
     Timings t;
     CudaConv c;
-    t.alloc_ms = time_ms([&] { c = cuda_conv_alloc(a.H, a.W, a.K); });
+    t.alloc_ms = time_ms([&] { c = cuda_conv_alloc(a.C, a.H, a.W, a.K); });
     for (int i = 0; i < a.warmup; ++i)
         cuda_conv_run(c, in.data(), out.data(), k.data(), a.bx, a.by);
 
@@ -230,7 +232,7 @@ Timings bench_cuda_variant(const Args& a, const std::vector<float>& in,
     }
     Timings t;
     CudaConv c;
-    t.alloc_ms = time_ms([&] { c = cuda_conv_alloc(a.H, a.W, a.K); });
+    t.alloc_ms = time_ms([&] { c = cuda_conv_alloc(a.C, a.H, a.W, a.K); });
     std::vector<double> h2d, kern, d2h;
     try {
         for (int i = 0; i < a.warmup; ++i)
@@ -266,7 +268,7 @@ void autotune_block(Args& a, const std::vector<float>& in,
     double best_kernel = std::numeric_limits<double>::infinity();
     cuda_init();
     const double tuning_ms = time_ms([&] {
-        CudaConv c = cuda_conv_alloc(a.H, a.W, a.K);
+        CudaConv c = cuda_conv_alloc(a.C, a.H, a.W, a.K);
         try {
             for (const auto& block : candidates) {
                 const int bx = block[0], by = block[1];

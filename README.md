@@ -23,24 +23,29 @@ out[r][c] = Σ_ch Σᵢ Σⱼ k[ch][i][j] · in[ch][r+i−R][c+j−R]
 |---|---|
 | Operation | Cross-correlation (filter not flipped), as in image-processing and CNN libraries |
 | Precision | FP32 input, filter, output, and accumulator |
-| Channels | `C` input channels, summed into one output channel. Only `seq` supports `C > 1` so far; every other implementation is the `C = 1` case |
+| Channels | `C` input channels, summed into one output channel. `seq` and every CUDA implementation support `C > 1`; the OpenMP versions are the `C = 1` case |
 | Layout | Row-major, channel-major (CHW); pixel `(ch, r, c)` at `in[(ch*H + r)*W + c]`, filter tap `(ch, i, j)` at `k[(ch*K + i)*K + j]` |
 | Filter | Square, positive odd `K`, centered, one `K × K` slice per input channel; benchmarks commonly use 3, 5, and 7 |
 | Boundary | Zero padding; output is `H × W` |
 | Sum order | Channel `ch`, then filter row `i`, then column `j` |
 
-Interfaces (`include/conv2d.h`). The sequential version takes the channel
-count; the other CPU versions and the direct CUDA version are single-channel:
+Interfaces (`include/conv2d.h`). The sequential and direct CUDA versions take
+the channel count; the OpenMP versions are single-channel:
 
 ```cpp
 void conv2d_seq(const float* in, float* out, const float* k,
-                int C, int H, int W, int K);
-void conv2d_<variant>(const float* in, float* out, const float* k,
-                      int H, int W, int K);
+                int C, int H, int W, int K);   // also conv2d_cuda
+void conv2d_<omp variant>(const float* in, float* out, const float* k,
+                          int H, int W, int K);
 ```
 
-The additional CUDA variants also use the staged CUDA interface declared in
-`include/conv2d.h`. Constant-memory variants support odd `K <= 63`.
+The CUDA benchmark path (`cuda_conv_alloc(C, H, W, K)`, `cuda_conv_run`,
+`cuda_conv_free`) and the additional CUDA variants use the staged interface
+declared in `include/conv2d.h`; the variants take C from the allocation.
+Shared-tile variants load one channel's tile at a time, so their shared
+memory doesn't grow with C. Constant-memory variants keep all C filter slices
+in a 4096-float symbol, so they need `C·K² ≤ 4096` (odd `K ≤ 63` for one
+channel, up to C = 83 for K = 7) and refuse larger filters.
 
 ## Methodology
 
@@ -104,7 +109,8 @@ in flags. On Euler, load an appropriate CUDA module before building and run
 CUDA tests and benchmarks on a GPU compute node.
 
 Options: `--size N` (or `--H`, `--W`), `--K`, `--C` (input channels,
-default 1; values above 1 are accepted only by `seq`), `--iters`, `--warmup`,
+default 1; values above 1 are accepted by `seq` and every CUDA implementation,
+not the OpenMP versions), `--iters`, `--warmup`,
 `--block BX BY` (CUDA thread block, default 32 8), `--block auto`, `--check`, `--dump DIR`,
 `--header`. Output is one CSV row per run with columns
 `impl,H,W,K,C,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass`;
@@ -181,8 +187,8 @@ afterwards.
 | impulse | One pixel = 1, at the center and each corner | The filter rotated 180° | Convolution instead of cross-correlation, edge clipping |
 | ones | All-ones image and filter, including images smaller than the filter | Count of in-bounds taps | Zero-padding errors |
 | random | Uniform [−1, 1], 12 shapes (1×1, 1×17, 17×1, primes, 257×263, 1000×1000, …) × K = 1, 3, 5, 7 | Within the error bound of the double-precision loop | General arithmetic and indexing |
-| multi-channel exact (`seq` only) | C = 2, 3, 5: a filter that is nonzero in one slice only; an impulse in one channel only; all ones | That input channel; that filter slice rotated 180°; C × the in-bounds tap count | Wrong input-channel offset, input channel paired with the wrong filter slice, channels skipped or repeated |
-| multi-channel random (`seq` only) | Uniform [−1, 1], 6 shapes × C = 2, 3, 16 × K = 1, 3, 5, 7 | Within the error bound (with C·K² terms) of the double-precision loop | General multi-channel indexing |
+| multi-channel exact (`seq` and all CUDA) | C = 2, 3, 5: a filter that is nonzero in one slice only; an impulse in one channel only; all ones | That input channel; that filter slice rotated 180°; C × the in-bounds tap count | Wrong input-channel offset, input channel paired with the wrong filter slice, channels skipped or repeated |
+| multi-channel random (`seq` and all CUDA) | Uniform [−1, 1], 6 shapes × C = 2, 3, 16 × K = 1, 3, 5, 7 | Within the error bound (with C·K² terms) of the double-precision loop | General multi-channel indexing |
 | repeatability | 513×517, K = 7, run 3 times | Identical bits every run | Data races, reads of uninitialized memory |
 
 The hand-derived cases use only small integers and products with 0 or 1, so
@@ -219,7 +225,7 @@ Requirements: Python 3 with NumPy and SciPy, or NumPy and PyTorch. Without SciPy
 ```
 # VALIDATE_SHAPES: HxWxK, or HxWxKxC for C input channels
 # VALIDATE_IMPLS default: seq, plus cuda if built in
-# VALIDATE_MC_IMPLS default: seq (the only ones run on shapes with C > 1)
+# shapes with C > 1 skip the OpenMP implementations (single-channel)
 make validate PYTHON=python3 \
               VALIDATE_SHAPES="2048x2048x3 1531x2777x7 1024x768x5x3" \
               VALIDATE_IMPLS="seq cuda" \
@@ -241,8 +247,9 @@ status: 0 if all pass, 1 if any fail, 2 for missing or malformed files.
 
 ### Not hooked up yet
 
-- **Multi-channel input is `seq`-only.** The OpenMP and CUDA versions are
-  single-channel, and `bin/conv` rejects `--C` above 1 for them. Multiple
+- **The OpenMP versions are single-channel.** `seq` and every CUDA
+  implementation take multi-channel input, but `bin/conv` rejects `--C`
+  above 1 for `omp`, `omp_simd` and `omp_blocked`. Multiple
   output channels (`Cout`, one filter per output) are not implemented
   anywhere. `plot.py` skips rows with `C != 1`, because its figures group by
   H, W and K only.

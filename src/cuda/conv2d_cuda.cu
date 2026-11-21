@@ -1,4 +1,7 @@
 // CUDA convolution: direct 2D convolution, one thread per output pixel.
+//
+// Multi-channel input (CHW): each thread sums its K*K window over all C
+// input channels, in the same order as conv2d_seq (channel, row, column).
 
 #include <cstdio>
 #include <cstdlib>
@@ -20,7 +23,7 @@
     } while (0)
 
 __global__ void conv2d_kernel(const float *in, float *out, const float *k,
-                              int H, int W, int K)
+                              int C, int H, int W, int K)
 {
     // row major order x should index the columns due to global memory coalescing within a warp
     const int r = blockIdx.y * blockDim.y + threadIdx.y;
@@ -28,7 +31,8 @@ __global__ void conv2d_kernel(const float *in, float *out, const float *k,
 
     // Filter rows that land inside the image for this output row.
     // Clipping the loop bounds is equivalent to zero padding but keeps
-    // the bounds check out of the inner loop.
+    // the bounds check out of the inner loop. Every channel has the same
+    // H x W shape, so the bounds don't depend on the channel.
     if (r < H && c < W)
     {
         const int R = K / 2;
@@ -36,14 +40,21 @@ __global__ void conv2d_kernel(const float *in, float *out, const float *k,
         const int i_hi = min(K, H - r + R);
         const int j_lo = max(0, R - c);
         const int j_hi = min(K, W - c + R);
+        const size_t plane = (size_t)H * W;  // floats per input channel
+        const size_t slice = (size_t)K * K;  // floats per filter channel
 
         float acc = 0.0f;
-        for (int i = i_lo; i < i_hi; ++i)
+        for (int ch = 0; ch < C; ++ch)
         {
-            const int y = r + i - R;
-            for (int j = j_lo; j < j_hi; ++j)
+            const float *in_ch = in + ch * plane;  // this channel's image
+            const float *k_ch = k + ch * slice;    // its filter slice
+            for (int i = i_lo; i < i_hi; ++i)
             {
-                acc += k[i * K + j] * in[y * W + (c + j - R)];
+                const int y = r + i - R;
+                for (int j = j_lo; j < j_hi; ++j)
+                {
+                    acc += k_ch[i * K + j] * in_ch[y * W + (c + j - R)];
+                }
             }
         }
         out[r * W + c] = acc;
@@ -82,16 +93,17 @@ bool cuda_block_supported(int H, int W, int bx, int by)
            grid_x <= prop.maxGridSize[0] && grid_y <= prop.maxGridSize[1];
 }
 
-CudaConv cuda_conv_alloc(int H, int W, int K)
+CudaConv cuda_conv_alloc(int C, int H, int W, int K)
 {
     CudaConv c;
+    c.C = C;
     c.H = H;
     c.W = W;
     c.K = K;
-    const size_t img = (size_t)H * W * sizeof(float);
-    CUDA_CHECK(cudaMalloc((void **)&c.d_in, img));
+    const size_t img = (size_t)H * W * sizeof(float);  // one channel
+    CUDA_CHECK(cudaMalloc((void **)&c.d_in, (size_t)C * img));
     CUDA_CHECK(cudaMalloc((void **)&c.d_out, img));
-    CUDA_CHECK(cudaMalloc((void **)&c.d_k, (size_t)K * K * sizeof(float)));
+    CUDA_CHECK(cudaMalloc((void **)&c.d_k, (size_t)C * K * K * sizeof(float)));
     for (void *&e : c.events)
     {
         cudaEvent_t ev;
@@ -117,7 +129,7 @@ void cuda_conv_free(CudaConv &c)
 CudaTimes cuda_conv_run(const CudaConv &c, const float *in, float *out,
                         const float *k, int bx, int by)
 {
-    const size_t img = (size_t)c.H * c.W * sizeof(float);
+    const size_t img = (size_t)c.H * c.W * sizeof(float);  // one channel
     cudaEvent_t e[4];
     for (int i = 0; i < 4; ++i) e[i] = (cudaEvent_t)c.events[i];
 
@@ -127,10 +139,11 @@ CudaTimes cuda_conv_run(const CudaConv &c, const float *in, float *out,
                     (c.H + block.y - 1) / block.y);
 
     CUDA_CHECK(cudaEventRecord(e[0]));
-    CUDA_CHECK(cudaMemcpy(c.d_in, in, img, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(c.d_k, k, (size_t)c.K * c.K * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(c.d_in, in, (size_t)c.C * img, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(c.d_k, k, (size_t)c.C * c.K * c.K * sizeof(float),
+                          cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaEventRecord(e[1]));
-    conv2d_kernel<<<grid, block>>>(c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
+    conv2d_kernel<<<grid, block>>>(c.d_in, c.d_out, c.d_k, c.C, c.H, c.W, c.K);
     CUDA_CHECK(cudaGetLastError());  // bad launch configuration, e.g. > 1024 threads
     CUDA_CHECK(cudaEventRecord(e[2]));
     CUDA_CHECK(cudaMemcpy(out, c.d_out, img, cudaMemcpyDeviceToHost));  // also reports kernel faults
@@ -145,9 +158,9 @@ CudaTimes cuda_conv_run(const CudaConv &c, const float *in, float *out,
 }
 
 void conv2d_cuda(const float *in, float *out, const float *k,
-                 int H, int W, int K)
+                 int C, int H, int W, int K)
 {
-    CudaConv c = cuda_conv_alloc(H, W, K);
+    CudaConv c = cuda_conv_alloc(C, H, W, K);
     cuda_conv_run(c, in, out, k, 32, 8);
     cuda_conv_free(c);
 }

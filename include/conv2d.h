@@ -6,8 +6,9 @@
 //
 // Multi-channel input uses CHW layout: `in` is C planes of H*W floats and `k`
 // is C slices of K*K floats, one per input channel. The output is a single
-// H*W plane; the channels are summed. The single-channel implementations
-// below are the C = 1 case and take no C argument.
+// H*W plane; the channels are summed. conv2d_seq and all CUDA versions take C
+// (the variants through CudaConv::C); the OpenMP versions are the C = 1 case
+// and take no C argument.
 #pragma once
 
 #include <cstddef>  // std::size_t, used by convolve()
@@ -44,15 +45,17 @@ void convolve(
 // CUDA version (src/cuda/conv2d_cuda.cu). Every function below prints the error
 // and exits if any CUDA call fails.
 
-// Same interface as the CPU versions: host pointers in and out. Allocates
-// device memory, copies in, runs with a 32x8 thread block, copies back, frees.
+// Same interface as conv2d_seq: host pointers in and out, C input channels.
+// Allocates device memory, copies in, runs with a 32x8 thread block, copies
+// back, frees. One thread per output pixel, summing over all C channels.
 void conv2d_cuda(const float* in, float* out, const float* k,
-                 int H, int W, int K);
+                 int C, int H, int W, int K);
 
 // Lower-level pieces for benchmarking: allocation happens once, outside the
 // timed loop, and each stage of a run is timed on the GPU with cudaEvents.
+// d_in holds C*H*W floats, d_k C*K*K, and d_out H*W.
 struct CudaConv {
-    int H = 0, W = 0, K = 0;
+    int C = 1, H = 0, W = 0, K = 0;
     float* d_in = nullptr;
     float* d_out = nullptr;
     float* d_k = nullptr;
@@ -67,7 +70,7 @@ struct CudaTimes {
 
 void cuda_init();  // create the CUDA context now so later timings exclude it
 int cuda_max_threads_per_block();
-CudaConv cuda_conv_alloc(int H, int W, int K);
+CudaConv cuda_conv_alloc(int C, int H, int W, int K);
 void cuda_conv_free(CudaConv& c);
 CudaTimes cuda_conv_run(const CudaConv& c, const float* in, float* out,
                         const float* k, int bx, int by);
@@ -75,7 +78,7 @@ CudaTimes cuda_conv_run(const CudaConv& c, const float* in, float* out,
 // Check whether a block and its grid fit the GPU's launch limits.
 bool cuda_block_supported(int H, int W, int bx, int by);
 
-// Additional single-channel CUDA experiments (src/cuda/conv2d_cuda_variants.cu).
+// Additional CUDA experiments (src/cuda/conv2d_cuda_variants.cu).
 // Unlike the functions above, these throw std::exception on errors.
 enum class CudaVariant {
     Tiled,           // `cuda_opt`: shared-memory image tile, global-memory filter
@@ -88,7 +91,10 @@ enum class CudaVariant {
 };
 
 // Uses the same reusable buffers, host pointers, and event timings as
-// cuda_conv_run. Constant-memory variants support odd K up to 63.
+// cuda_conv_run, including C input channels from cuda_conv_alloc.
+// Constant-memory variants hold all C filter slices in constant memory and
+// need C*K*K <= 4096 (odd K up to 63 for one channel); otherwise they throw
+// std::invalid_argument.
 CudaTimes cuda_conv_run_variant(const CudaConv& c, const float* in, float* out,
                                 const float* k, int bx, int by,
                                 CudaVariant variant);

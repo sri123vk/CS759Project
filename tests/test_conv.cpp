@@ -17,7 +17,8 @@
 //                                         when built with -DCONV_HAVE_CUDA_VARIANTS
 //
 // Most tests use one input channel. The multi-channel tests (C > 1) run only
-// on implementations marked `multichannel` in all_impls(); for now, seq.
+// on implementations marked `multichannel` in all_impls(): seq and every CUDA
+// implementation (not the OpenMP versions).
 //
 // Exit status: 0 if every check passes, 1 if any fails, 2 on bad usage.
 
@@ -129,18 +130,19 @@ std::vector<Impl> all_impls() {
     // cuda/32x8 is the one-call conv2d_cuda(); the rest go through the
     // benchmark path (alloc / run / free) with the block shapes we sweep,
     // plus 7x3, which leaves partial blocks along every edge.
-    v.push_back({"cuda/32x8", single_channel(conv2d_cuda), [] {}, false});
+    // All of them take C input channels.
+    v.push_back({"cuda/32x8", conv2d_cuda, [] {}, false, true});
     const int blocks[][2] = {{8, 8}, {16, 16}, {32, 32}, {128, 1}, {1, 256}, {7, 3}};
     for (const auto& b : blocks) {
         const int bx = b[0], by = b[1];
         v.push_back({fmt("cuda/%dx%d", bx, by),
-                     single_channel([bx, by](const float* in, float* out, const float* k,
-                                             int H, int W, int K) {
-                         CudaConv c = cuda_conv_alloc(H, W, K);
+                     [bx, by](const float* in, float* out, const float* k,
+                              int C, int H, int W, int K) {
+                         CudaConv c = cuda_conv_alloc(C, H, W, K);
                          cuda_conv_run(c, in, out, k, bx, by);
                          cuda_conv_free(c);
-                     }),
-                     [] {}, false});
+                     },
+                     [] {}, false, true});
     }
 #endif
 
@@ -162,9 +164,9 @@ std::vector<Impl> all_impls() {
             const int bx = block[0], by = block[1];
             const CudaVariant variant = item.variant;
             v.push_back({fmt("%s/%dx%d", item.name, bx, by),
-                single_channel([bx, by, variant](const float* in, float* out, const float* k,
-                                                 int H, int W, int K) {
-                    CudaConv c = cuda_conv_alloc(H, W, K);
+                [bx, by, variant](const float* in, float* out, const float* k,
+                                  int C, int H, int W, int K) {
+                    CudaConv c = cuda_conv_alloc(C, H, W, K);
                     try {
                         cuda_conv_run_variant(c, in, out, k, bx, by, variant);
                     } catch (...) {
@@ -172,8 +174,8 @@ std::vector<Impl> all_impls() {
                         throw;
                     }
                     cuda_conv_free(c);
-                }),
-                [] {}, false});
+                },
+                [] {}, false, true});
         }
     }
 #endif

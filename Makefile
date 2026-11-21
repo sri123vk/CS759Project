@@ -32,8 +32,7 @@ endif
 # and implementation, then validation/validate.py compares every output with
 # SciPy (or PyTorch). Shapes are HxWxK, or HxWxKxC for C input channels.
 # Implementations default to seq, plus cuda when it is built in. Shapes with
-# C > 1 run only the implementations in VALIDATE_MC_IMPLS that are also in
-# VALIDATE_IMPLS (multi-channel input is seq-only so far).
+# C > 1 skip the OpenMP implementations, which are single-channel.
 #
 # `make test` runs it after the unit tests. VALIDATE=auto (default) runs it
 # if $(PYTHON) has numpy and scipy (or torch) and otherwise prints SKIPPED;
@@ -45,7 +44,6 @@ VALIDATE_DIR    ?= data/validate
 VALIDATE_SHAPES ?= 2048x2048x3 2048x2048x5 2048x2048x7 1531x2777x7 \
                    1024x768x5x3 257x263x7x16
 VALIDATE_IMPLS  ?= seq $(if $(filter 1,$(CUDA)),cuda)
-VALIDATE_MC_IMPLS ?= seq
 
 .PHONY: all test validate clean
 
@@ -89,7 +87,7 @@ validate: $(BIN)/conv
 	  case $$rest in *x*) C=$${rest#*x};; esac; \
 	  for impl in $(VALIDATE_IMPLS); do \
 	    if [ "$$C" != 1 ]; then \
-	      case " $(VALIDATE_MC_IMPLS) " in *" $$impl "*) ;; *) continue;; esac; \
+	      case $$impl in omp*) continue;; esac; \
 	    fi; \
 	    echo "  $$impl $${H}x$${W} K=$$K C=$$C"; \
 	    ./$(BIN)/conv --impl $$impl --H $$H --W $$W --K $$K --C $$C \

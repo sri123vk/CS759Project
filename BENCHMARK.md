@@ -155,9 +155,10 @@ python3 scripts/plot_vec.py results/vec-final   # -> plots/vec-final/fig_vec_spe
 These need support in the driver first. Once it's there, they're one more
 experiment function in `bench.sh`:
 - **Multi-channel input** (review). `bin/conv --C` now sets the number of
-  input channels, but only `seq` supports more than one, and `plot.py` skips
-  rows with `C != 1`. The parallel versions, multiple output channels (`Cout`)
-  and plots by channel count are still needed.
+  input channels for `seq` and every CUDA implementation, but `plot.py` skips
+  rows with `C != 1`. Multi-channel OpenMP versions, multiple output channels
+  (`Cout`), a `bench.sh` experiment over C, and plots by channel count are
+  still needed.
 - **Pinned vs pageable host memory.** This would show how much of the
   transfer cost (H3) can be recovered. Needs a `--pinned` option.
 

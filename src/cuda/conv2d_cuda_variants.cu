@@ -1,5 +1,12 @@
-// Single-channel 2-D cross-correlation experiments beyond the direct
-// baseline in conv2d_cuda.cu (impl name `cuda`).
+// 2-D cross-correlation experiments beyond the direct baseline in
+// conv2d_cuda.cu (impl name `cuda`).
+//
+// All variants take C input channels (CHW layout, see conv2d.h) and sum them
+// into one output plane, adding channel by channel and, within a channel, in
+// the same row/column order as before. Shared-tile variants load one
+// channel's tile at a time, so their shared memory does not grow with C.
+// Constant-memory variants hold all C filter slices in the constant symbol,
+// so they need C*K*K <= 4096.
 //
 // cuda_opt:         shared input tile, filter in global memory.
 // cuda_const:       one output per thread, filter in constant memory.
@@ -25,9 +32,10 @@
 
 namespace {
 
-// 4096 floats = 16 KiB. Odd square filters through 63 x 63 fit.
-// Larger filters are rejected explicitly rather than silently changing
-// implementations in a performance experiment.
+// 4096 floats = 16 KiB, holding all C filter slices: C*K*K <= 4096 (for one
+// channel, odd square filters through 63 x 63 fit). Larger filters are
+// rejected explicitly rather than silently changing implementations in a
+// performance experiment.
 constexpr std::size_t kConstantFloats = 4096;
 __constant__ float g_variant_filter[kConstantFloats];
 std::mutex g_constant_filter_mutex;
@@ -43,7 +51,7 @@ void check_variant(cudaError_t status, const char* operation) {
 // filter coefficients from a constant symbol. Bounds are clipped outside the
 // inner loop, just as in the project's direct baseline.
 __global__ void conv2d_variant_constant(
-    const float* image, float* output, int H, int W, int K
+    const float* image, float* output, int C, int H, int W, int K
 ) {
     // The host validates that all 32-bit indices and intermediate values fit.
     const int row = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
@@ -55,13 +63,20 @@ __global__ void conv2d_variant_constant(
     const int i_hi = min(K, H - row + radius);
     const int j_lo = max(0, radius - col);
     const int j_hi = min(K, W - col + radius);
+    const std::size_t plane = static_cast<std::size_t>(H) * W;
 
     float sum = 0.0f;
-    for (int i = i_lo; i < i_hi; ++i) {
-        const int y = row + i - radius;
-        for (int j = j_lo; j < j_hi; ++j) {
-            const int x = col + j - radius;
-            sum += image[y * W + x] * g_variant_filter[i * K + j];
+    for (int ch = 0; ch < C; ++ch) {
+        const float* channel = image + ch * plane;
+        // Index the symbol directly (not through a pointer) so the reads
+        // stay in the constant address space. C*K*K <= 4096 fits an int.
+        const int f0 = ch * K * K;
+        for (int i = i_lo; i < i_hi; ++i) {
+            const int y = row + i - radius;
+            for (int j = j_lo; j < j_hi; ++j) {
+                const int x = col + j - radius;
+                sum += channel[y * W + x] * g_variant_filter[f0 + i * K + j];
+            }
         }
     }
     output[row * W + col] = sum;
@@ -78,13 +93,15 @@ __device__ __forceinline__ float filter_weight(const float* filter, int index) {
     }
 }
 
-// Each block cooperatively loads its output-sized image tile plus the halo.
-// The filter is independent of the shared input tile: cuda_opt reads it from
-// global memory, cuda_tiled_const from constant memory. Every thread
-// participates in loading and in the barrier.
+// Each block cooperatively loads its output-sized image tile plus the halo,
+// one input channel at a time. The filter is independent of the shared input
+// tile: cuda_opt reads it from global memory, cuda_tiled_const from constant
+// memory. Every thread, including those whose output lies outside the image
+// in a partial edge block, participates in every load and every barrier.
 template <bool UseConstant>
 __global__ void conv2d_variant_tiled(
-    const float* image, float* output, const float* filter, int H, int W, int K
+    const float* image, float* output, const float* filter,
+    int C, int H, int W, int K
 ) {
     extern __shared__ float tile[];
     const int radius = K / 2;
@@ -92,49 +109,58 @@ __global__ void conv2d_variant_tiled(
     const int tile_height = static_cast<int>(blockDim.y) + K - 1;
     const int base_y = static_cast<int>(blockIdx.y * blockDim.y);
     const int base_x = static_cast<int>(blockIdx.x * blockDim.x);
-
-    for (int ty = static_cast<int>(threadIdx.y); ty < tile_height;
-         ty += static_cast<int>(blockDim.y)) {
-        const int y = base_y + ty - radius;
-        for (int tx = static_cast<int>(threadIdx.x); tx < tile_width;
-             tx += static_cast<int>(blockDim.x)) {
-            const int x = base_x + tx - radius;
-            tile[ty * tile_width + tx] = y >= 0 && y < H && x >= 0 && x < W
-                ? image[y * W + x] : 0.0f;
-        }
-    }
-    __syncthreads();
+    const std::size_t plane = static_cast<std::size_t>(H) * W;
 
     const int row = base_y + static_cast<int>(threadIdx.y);
     const int col = base_x + static_cast<int>(threadIdx.x);
-    if (row >= H || col >= W) return;
-
+    const bool active = row < H && col < W;
     const bool interior = row >= radius && row + radius < H &&
                           col >= radius && col + radius < W;
     float sum = 0.0f;
-    if (interior) {
-        for (int i = 0; i < K; ++i) {
-            const float* tile_row = tile +
-                (static_cast<int>(threadIdx.y) + i) * tile_width + threadIdx.x;
-            for (int j = 0; j < K; ++j) {
-                sum += tile_row[j] * filter_weight<UseConstant>(filter, i * K + j);
+
+    for (int ch = 0; ch < C; ++ch) {
+        const float* channel = image + ch * plane;
+        const int f0 = ch * K * K;
+
+        // Wait until every thread has finished reading the previous
+        // channel's tile before overwriting it.
+        if (ch > 0) __syncthreads();
+        for (int ty = static_cast<int>(threadIdx.y); ty < tile_height;
+             ty += static_cast<int>(blockDim.y)) {
+            const int y = base_y + ty - radius;
+            for (int tx = static_cast<int>(threadIdx.x); tx < tile_width;
+                 tx += static_cast<int>(blockDim.x)) {
+                const int x = base_x + tx - radius;
+                tile[ty * tile_width + tx] = y >= 0 && y < H && x >= 0 && x < W
+                    ? channel[y * W + x] : 0.0f;
             }
         }
-    } else {
-        // Skip invalid taps, including 0 * infinity or 0 * NaN at borders.
-        for (int i = 0; i < K; ++i) {
-            const int y = row + i - radius;
-            const float* tile_row = tile +
-                (static_cast<int>(threadIdx.y) + i) * tile_width + threadIdx.x;
-            for (int j = 0; j < K; ++j) {
-                const int x = col + j - radius;
-                if (y >= 0 && y < H && x >= 0 && x < W) {
-                    sum += tile_row[j] * filter_weight<UseConstant>(filter, i * K + j);
+        __syncthreads();
+
+        if (interior) {
+            for (int i = 0; i < K; ++i) {
+                const float* tile_row = tile +
+                    (static_cast<int>(threadIdx.y) + i) * tile_width + threadIdx.x;
+                for (int j = 0; j < K; ++j) {
+                    sum += tile_row[j] * filter_weight<UseConstant>(filter, f0 + i * K + j);
+                }
+            }
+        } else if (active) {
+            // Skip invalid taps, including 0 * infinity or 0 * NaN at borders.
+            for (int i = 0; i < K; ++i) {
+                const int y = row + i - radius;
+                const float* tile_row = tile +
+                    (static_cast<int>(threadIdx.y) + i) * tile_width + threadIdx.x;
+                for (int j = 0; j < K; ++j) {
+                    const int x = col + j - radius;
+                    if (y >= 0 && y < H && x >= 0 && x < W) {
+                        sum += tile_row[j] * filter_weight<UseConstant>(filter, f0 + i * K + j);
+                    }
                 }
             }
         }
     }
-    output[row * W + col] = sum;
+    if (active) output[row * W + col] = sum;
 }
 
 // Each thread computes two horizontally separated output pixels. For each
@@ -142,7 +168,8 @@ __global__ void conv2d_variant_tiled(
 // Each coefficient loaded by a thread can be used by both accumulators.
 // This variant does not use shared memory or constant memory.
 __global__ void conv2d_variant_multiout(
-    const float* image, float* output, const float* filter, int H, int W, int K
+    const float* image, float* output, const float* filter,
+    int C, int H, int W, int K
 ) {
     const int row = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
     const int col0 = static_cast<int>(blockIdx.x * (2U * blockDim.x) + threadIdx.x);
@@ -153,35 +180,40 @@ __global__ void conv2d_variant_multiout(
     const bool have_second = col1 < W;
     const bool interior = have_second && row >= radius && row + radius < H &&
                           col0 >= radius && col1 + radius < W;
+    const std::size_t plane = static_cast<std::size_t>(H) * W;
     float sum0 = 0.0f;
     float sum1 = 0.0f;
 
-    if (interior) {
-        const float* first = image + (row - radius) * W + col0 - radius;
-        const float* second = image + (row - radius) * W + col1 - radius;
-        for (int i = 0; i < K; ++i) {
-            const float* in0 = first + i * W;
-            const float* in1 = second + i * W;
-            const float* weights = filter + i * K;
-            for (int j = 0; j < K; ++j) {
-                const float coefficient = weights[j];
-                sum0 += in0[j] * coefficient;
-                sum1 += in1[j] * coefficient;
+    for (int ch = 0; ch < C; ++ch) {
+        const float* channel = image + ch * plane;
+        const float* channel_filter = filter + ch * K * K;
+        if (interior) {
+            const float* first = channel + (row - radius) * W + col0 - radius;
+            const float* second = channel + (row - radius) * W + col1 - radius;
+            for (int i = 0; i < K; ++i) {
+                const float* in0 = first + i * W;
+                const float* in1 = second + i * W;
+                const float* weights = channel_filter + i * K;
+                for (int j = 0; j < K; ++j) {
+                    const float coefficient = weights[j];
+                    sum0 += in0[j] * coefficient;
+                    sum1 += in1[j] * coefficient;
+                }
             }
-        }
-    } else {
-        for (int i = 0; i < K; ++i) {
-            const int y = row + i - radius;
-            if (y < 0 || y >= H) continue;
-            for (int j = 0; j < K; ++j) {
-                const int x0 = col0 + j - radius;
-                const int x1 = col1 + j - radius;
-                const bool valid0 = x0 >= 0 && x0 < W;
-                const bool valid1 = have_second && x1 >= 0 && x1 < W;
-                if (valid0 || valid1) {
-                    const float coefficient = filter[i * K + j];
-                    if (valid0) sum0 += image[y * W + x0] * coefficient;
-                    if (valid1) sum1 += image[y * W + x1] * coefficient;
+        } else {
+            for (int i = 0; i < K; ++i) {
+                const int y = row + i - radius;
+                if (y < 0 || y >= H) continue;
+                for (int j = 0; j < K; ++j) {
+                    const int x0 = col0 + j - radius;
+                    const int x1 = col1 + j - radius;
+                    const bool valid0 = x0 >= 0 && x0 < W;
+                    const bool valid1 = have_second && x1 >= 0 && x1 < W;
+                    if (valid0 || valid1) {
+                        const float coefficient = channel_filter[i * K + j];
+                        if (valid0) sum0 += channel[y * W + x0] * coefficient;
+                        if (valid1) sum1 += channel[y * W + x1] * coefficient;
+                    }
                 }
             }
         }
@@ -196,7 +228,8 @@ __global__ void conv2d_variant_multiout(
 // from shared image tiles and constant-memory filter coefficients.
 template <bool UseShared, bool UseConstant>
 __global__ void conv2d_variant_multiout_combined(
-    const float* image, float* output, const float* filter, int H, int W, int K
+    const float* image, float* output, const float* filter,
+    int C, int H, int W, int K
 ) {
     extern __shared__ float tile[];
     const int bx = static_cast<int>(blockDim.x);
@@ -207,80 +240,92 @@ __global__ void conv2d_variant_multiout_combined(
     const int base_y = static_cast<int>(blockIdx.y * blockDim.y);
     const int base_x = static_cast<int>(blockIdx.x * (2U * blockDim.x));
     const int tile_width = 2 * bx + K - 1;
-
-    if constexpr (UseShared) {
-        // A block produces 2*bx by by outputs. Load its entire input tile,
-        // including both halos. Every thread helps, including threads whose
-        // output positions are outside the image in a partial edge block.
-        const int tile_height = by + K - 1;
-        for (int tile_y = ty; tile_y < tile_height; tile_y += by) {
-            const int y = base_y + tile_y - radius;
-            for (int tile_x = tx; tile_x < tile_width; tile_x += bx) {
-                const int x = base_x + tile_x - radius;
-                tile[tile_y * tile_width + tile_x] =
-                    y >= 0 && y < H && x >= 0 && x < W
-                    ? image[y * W + x] : 0.0f;
-            }
-        }
-        __syncthreads();
-    }
+    const std::size_t plane = static_cast<std::size_t>(H) * W;
 
     const int row = base_y + ty;
     const int col0 = base_x + tx;
     const int col1 = col0 + bx;
-    // In the shared variants, this check must remain after the barrier.
-    if (row >= H || col0 >= W) return;
-
+    // No early return: in the shared variants every thread must reach every
+    // barrier in the channel loop, so out-of-image threads just skip the sums.
+    const bool active = row < H && col0 < W;
     const bool have_second = col1 < W;
     const bool interior = have_second && row >= radius && row + radius < H &&
                           col0 >= radius && col1 + radius < W;
     float sum0 = 0.0f;
     float sum1 = 0.0f;
 
-    if (interior) {
-        for (int i = 0; i < K; ++i) {
-            const float* in0;
-            const float* in1;
-            if constexpr (UseShared) {
-                in0 = tile + (ty + i) * tile_width + tx;
-                in1 = in0 + bx;
-            } else {
-                const int y = row + i - radius;
-                in0 = image + y * W + col0 - radius;
-                in1 = image + y * W + col1 - radius;
+    for (int ch = 0; ch < C; ++ch) {
+        const float* channel = image + ch * plane;
+        const int f0 = ch * K * K;
+
+        if constexpr (UseShared) {
+            // A block produces 2*bx by by outputs. Load this channel's input
+            // tile, including both halos. Every thread helps, including
+            // threads whose output positions are outside the image in a
+            // partial edge block. The first barrier keeps the previous
+            // channel's tile intact until every thread has finished with it.
+            if (ch > 0) __syncthreads();
+            const int tile_height = by + K - 1;
+            for (int tile_y = ty; tile_y < tile_height; tile_y += by) {
+                const int y = base_y + tile_y - radius;
+                for (int tile_x = tx; tile_x < tile_width; tile_x += bx) {
+                    const int x = base_x + tile_x - radius;
+                    tile[tile_y * tile_width + tile_x] =
+                        y >= 0 && y < H && x >= 0 && x < W
+                        ? channel[y * W + x] : 0.0f;
+                }
             }
-            for (int j = 0; j < K; ++j) {
-                const float coefficient = filter_weight<UseConstant>(filter, i * K + j);
-                sum0 += in0[j] * coefficient;
-                sum1 += in1[j] * coefficient;
-            }
+            __syncthreads();
         }
-    } else {
-        // Match the direct implementation: invalid image taps are skipped,
-        // not multiplied by padding zeros (important for NaN/Inf weights).
-        for (int i = 0; i < K; ++i) {
-            const int y = row + i - radius;
-            if (y < 0 || y >= H) continue;
-            for (int j = 0; j < K; ++j) {
-                const int x0 = col0 + j - radius;
-                const int x1 = col1 + j - radius;
-                const bool valid0 = x0 >= 0 && x0 < W;
-                const bool valid1 = have_second && x1 >= 0 && x1 < W;
-                if (valid0 || valid1) {
-                    const float coefficient = filter_weight<UseConstant>(filter, i * K + j);
-                    if constexpr (UseShared) {
-                        const int tile_index = (ty + i) * tile_width + tx + j;
-                        if (valid0) sum0 += tile[tile_index] * coefficient;
-                        if (valid1) sum1 += tile[tile_index + bx] * coefficient;
-                    } else {
-                        if (valid0) sum0 += image[y * W + x0] * coefficient;
-                        if (valid1) sum1 += image[y * W + x1] * coefficient;
+
+        if (interior) {
+            for (int i = 0; i < K; ++i) {
+                const float* in0;
+                const float* in1;
+                if constexpr (UseShared) {
+                    in0 = tile + (ty + i) * tile_width + tx;
+                    in1 = in0 + bx;
+                } else {
+                    const int y = row + i - radius;
+                    in0 = channel + y * W + col0 - radius;
+                    in1 = channel + y * W + col1 - radius;
+                }
+                for (int j = 0; j < K; ++j) {
+                    const float coefficient =
+                        filter_weight<UseConstant>(filter, f0 + i * K + j);
+                    sum0 += in0[j] * coefficient;
+                    sum1 += in1[j] * coefficient;
+                }
+            }
+        } else if (active) {
+            // Match the direct implementation: invalid image taps are skipped,
+            // not multiplied by padding zeros (important for NaN/Inf weights).
+            for (int i = 0; i < K; ++i) {
+                const int y = row + i - radius;
+                if (y < 0 || y >= H) continue;
+                for (int j = 0; j < K; ++j) {
+                    const int x0 = col0 + j - radius;
+                    const int x1 = col1 + j - radius;
+                    const bool valid0 = x0 >= 0 && x0 < W;
+                    const bool valid1 = have_second && x1 >= 0 && x1 < W;
+                    if (valid0 || valid1) {
+                        const float coefficient =
+                            filter_weight<UseConstant>(filter, f0 + i * K + j);
+                        if constexpr (UseShared) {
+                            const int tile_index = (ty + i) * tile_width + tx + j;
+                            if (valid0) sum0 += tile[tile_index] * coefficient;
+                            if (valid1) sum1 += tile[tile_index + bx] * coefficient;
+                        } else {
+                            if (valid0) sum0 += channel[y * W + x0] * coefficient;
+                            if (valid1) sum1 += channel[y * W + x1] * coefficient;
+                        }
                     }
                 }
             }
         }
     }
 
+    if (!active) return;
     output[row * W + col0] = sum0;
     if (have_second) output[row * W + col1] = sum1;
 }
@@ -424,7 +469,7 @@ CudaTimes cuda_conv_run_variant(const CudaConv& c, const float* in, float* out,
                                 const float* k, int bx, int by,
                                 CudaVariant variant) {
     if (!in || !out || !k || !c.d_in || !c.d_out || !c.d_k ||
-        c.H <= 0 || c.W <= 0 || c.K <= 0 || c.K % 2 == 0 ||
+        c.C <= 0 || c.H <= 0 || c.W <= 0 || c.K <= 0 || c.K % 2 == 0 ||
         bx <= 0 || by <= 0) {
         throw std::invalid_argument("invalid CUDA variant arguments");
     }
@@ -432,18 +477,27 @@ CudaTimes cuda_conv_run_variant(const CudaConv& c, const float* in, float* out,
         if (!event) throw std::invalid_argument("CUDA events are not initialized");
     }
     const bool uses_constant = uses_constant_filter(variant);
+    // One output plane of H*W; C input planes; C filter slices of K*K.
     const auto image_elements =
         static_cast<std::uint64_t>(c.H) * static_cast<std::uint64_t>(c.W);
-    const auto filter_elements =
+    const auto input_elements = static_cast<std::uint64_t>(c.C) * image_elements;
+    const auto filter_elements = static_cast<std::uint64_t>(c.C) *
         static_cast<std::uint64_t>(c.K) * static_cast<std::uint64_t>(c.K);
     const auto max_elements = std::numeric_limits<std::size_t>::max() / sizeof(float);
-    if (image_elements > max_elements || filter_elements > max_elements) {
+    if (input_elements / c.C != image_elements || input_elements > max_elements ||
+        filter_elements > max_elements) {
         throw std::overflow_error("image or filter byte count is too large");
     }
+    // Kernels index the filter with 32-bit ints (ch*K*K + i*K + j).
+    if (filter_elements > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+        throw std::invalid_argument("C*K*K exceeds 32-bit filter indexing");
+    }
     if (uses_constant && filter_elements > kConstantFloats) {
-        throw std::invalid_argument("constant-memory variant requires odd K <= 63");
+        throw std::invalid_argument(
+            "constant-memory variant requires C*K*K <= 4096 (odd K <= 63 for C = 1)");
     }
     const std::size_t image_bytes = static_cast<std::size_t>(image_elements) * sizeof(float);
+    const std::size_t input_bytes = static_cast<std::size_t>(input_elements) * sizeof(float);
     const std::size_t filter_bytes = static_cast<std::size_t>(filter_elements) * sizeof(float);
     const LaunchConfig launch = get_launch_config(c.H, c.W, c.K, bx, by, variant);
 
@@ -457,7 +511,7 @@ CudaTimes cuda_conv_run_variant(const CudaConv& c, const float* in, float* out,
 
     try {
         check_variant(cudaEventRecord(e[0]), "record H2D start");
-        check_variant(cudaMemcpy(c.d_in, in, image_bytes, cudaMemcpyHostToDevice),
+        check_variant(cudaMemcpy(c.d_in, in, input_bytes, cudaMemcpyHostToDevice),
                       "copy image to GPU");
         if (uses_constant) {
             check_variant(cudaMemcpyToSymbol(g_variant_filter, k, filter_bytes, 0,
@@ -472,31 +526,31 @@ CudaTimes cuda_conv_run_variant(const CudaConv& c, const float* in, float* out,
         switch (variant) {
         case CudaVariant::Constant:
             conv2d_variant_constant<<<launch.grid, launch.block>>>(
-                c.d_in, c.d_out, c.H, c.W, c.K);
+                c.d_in, c.d_out, c.C, c.H, c.W, c.K);
             break;
         case CudaVariant::Tiled:
             conv2d_variant_tiled<false><<<launch.grid, launch.block, launch.shared_bytes>>>(
-                c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
+                c.d_in, c.d_out, c.d_k, c.C, c.H, c.W, c.K);
             break;
         case CudaVariant::TiledConstant:
             conv2d_variant_tiled<true><<<launch.grid, launch.block, launch.shared_bytes>>>(
-                c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
+                c.d_in, c.d_out, c.d_k, c.C, c.H, c.W, c.K);
             break;
         case CudaVariant::MultiOutput:
             conv2d_variant_multiout<<<launch.grid, launch.block>>>(
-                c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
+                c.d_in, c.d_out, c.d_k, c.C, c.H, c.W, c.K);
             break;
         case CudaVariant::MultiOutputConstant:
             conv2d_variant_multiout_combined<false, true><<<launch.grid, launch.block>>>(
-                c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
+                c.d_in, c.d_out, c.d_k, c.C, c.H, c.W, c.K);
             break;
         case CudaVariant::MultiOutputTiled:
             conv2d_variant_multiout_combined<true, false><<<launch.grid, launch.block, launch.shared_bytes>>>(
-                c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
+                c.d_in, c.d_out, c.d_k, c.C, c.H, c.W, c.K);
             break;
         case CudaVariant::MultiOutputTiledConstant:
             conv2d_variant_multiout_combined<true, true><<<launch.grid, launch.block, launch.shared_bytes>>>(
-                c.d_in, c.d_out, c.d_k, c.H, c.W, c.K);
+                c.d_in, c.d_out, c.d_k, c.C, c.H, c.W, c.K);
             break;
         default:
             throw std::invalid_argument("unknown CUDA variant");
