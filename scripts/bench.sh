@@ -141,8 +141,11 @@ run() {
     esac
     [[ -s $csv ]] || echo "threads,schedule,$(head -1 <<<"$out")" > "$csv"
     echo "$threads,$sched,$(tail -1 <<<"$out")" >> "$csv"
+    # Find median_ms by name, so new driver columns don't shift it.
+    local col
+    col=$(head -1 <<<"$out" | tr , '\n' | grep -nx median_ms | cut -d: -f1)
     printf '  %-58s %10s ms\n' "$* ${threads:+t=$threads $sched}" \
-        "$(tail -1 <<<"$out" | cut -d, -f8)" >&2
+        "$(tail -1 <<<"$out" | cut -d, -f"${col:-9}")" >&2
 }
 
 # In experiments where threads/schedule aren't the variable: seq runs on 1
