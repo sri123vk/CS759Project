@@ -363,10 +363,8 @@ LaunchConfig get_launch_config(int H, int W, int K, int bx, int by,
         throw std::invalid_argument("block exceeds this GPU or kernel's limits");
     }
 
-    const auto columns_per_block = static_cast<std::uint64_t>(bx) *
-        (is_multiout(variant) ? 2 : 1);
-    const auto grid_x = (static_cast<std::uint64_t>(W) + columns_per_block - 1)
-                        / columns_per_block;
+    const auto columns_per_block = static_cast<std::uint64_t>(bx) * (is_multiout(variant) ? 2 : 1);
+    const auto grid_x = (static_cast<std::uint64_t>(W) + columns_per_block - 1)/ columns_per_block;
     const auto grid_y = (static_cast<std::uint64_t>(H) + by - 1) / by;
     if (grid_x > static_cast<std::uint64_t>(prop.maxGridSize[0]) ||
         grid_y > static_cast<std::uint64_t>(prop.maxGridSize[1])) {
