@@ -13,6 +13,10 @@
 // --check  also runs the sequential version and compares against it
 // --dump   writes in/k/out as raw float32 files for the Python validator
 //
+// Exit status: 0 ok, 1 error, 2 --check failed, 3 configuration not
+// supported (block too large for the GPU or kernel, shared-memory tile too
+// big, C*K*K over the constant-memory limit). bench.sh skips status 3.
+//
 // Timing: median_ms/min_ms are host wall-clock times per call. For cuda a
 // call is host->device copy + kernel + device->host copy. Device memory is
 // allocated once before timing (reported as alloc_ms) and the CUDA context
@@ -146,6 +150,9 @@ ConvFn pick_cpu(const std::string& impl) {
 
 const double kNone = std::numeric_limits<double>::quiet_NaN();
 
+// Exit status for a configuration this GPU or kernel can't run.
+constexpr int kUnsupported = 3;
+
 // Timings for one benchmark configuration. Stage times stay NaN (printed as
 // empty CSV fields) for implementations that don't have them.
 struct Timings {
@@ -171,9 +178,13 @@ Timings bench_cuda(const Args& a, const std::vector<float>& in,
     const int max_threads = cuda_max_threads_per_block();
     const long long threads = static_cast<long long>(a.bx) * a.by;
     if (threads > max_threads) {
-        std::fprintf(stderr, "block %dx%d has %lld threads; this GPU allows at most %d\n",
+        std::fprintf(stderr, "unsupported: block %dx%d has %lld threads; this GPU allows at most %d\n",
                      a.bx, a.by, threads, max_threads);
-        std::exit(1);
+        std::exit(kUnsupported);
+    }
+    if (!cuda_block_supported(a.H, a.W, a.bx, a.by)) {
+        std::fprintf(stderr, "unsupported: block/grid configuration %dx%d\n", a.bx, a.by);
+        std::exit(kUnsupported);
     }
 
     Timings t;
@@ -227,8 +238,8 @@ Timings bench_cuda_variant(const Args& a, const std::vector<float>& in,
                            std::vector<float>& out, const std::vector<float>& k) {
     cuda_init();
     if (!cuda_block_supported(a.H, a.W, a.bx, a.by)) {
-        std::fprintf(stderr, "unsupported block/grid configuration %dx%d\n", a.bx, a.by);
-        std::exit(1);
+        std::fprintf(stderr, "unsupported: block/grid configuration %dx%d\n", a.bx, a.by);
+        std::exit(kUnsupported);
     }
     Timings t;
     CudaConv c;
@@ -262,7 +273,8 @@ Timings bench_cuda_variant(const Args& a, const std::vector<float>& in,
 // Tune outside the reported benchmark samples; selection cost is sent to stderr.
 void autotune_block(Args& a, const std::vector<float>& in,
                     std::vector<float>& out, const std::vector<float>& k) {
-    const int candidates[][2] = {{32, 8}, {32, 16}, {16, 16}, {32, 4}, {16, 8}, {8, 8}};
+    const int candidates[][2] = {{32, 8}, {32, 16}, {16, 16}, {32, 4}, {16, 8}, {8, 8},
+                                 {64, 4}, {64, 8}, {128, 2}, {128, 4}};
     constexpr int trials = 3;
     int best_x = 0, best_y = 0;
     double best_kernel = std::numeric_limits<double>::infinity();
@@ -366,6 +378,11 @@ int main(int argc, char** argv) {
     } else {
     t = bench_cpu(a, in, out, k);
     }
+    } catch (const std::invalid_argument& error) {
+        // Thrown by the CUDA variants for a block, tile or filter size the
+        // GPU or kernel can't handle.
+        std::fprintf(stderr, "unsupported: %s\n", error.what());
+        return kUnsupported;
     } catch (const std::exception& error) {
         std::fprintf(stderr, "CUDA benchmark failed: %s\n", error.what());
         return 1;

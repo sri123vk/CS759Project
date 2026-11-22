@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <functional>
 #include <limits>
 #include <string>
@@ -128,11 +129,13 @@ std::vector<Impl> all_impls() {
 #ifdef CONV_HAVE_CUDA
     // FMA changes the rounding, so only the error bound applies.
     // cuda/32x8 is the one-call conv2d_cuda(); the rest go through the
-    // benchmark path (alloc / run / free) with the block shapes we sweep,
-    // plus 7x3, which leaves partial blocks along every edge.
+    // benchmark path (alloc / run / free) with shapes from the block sweep:
+    // square, wider than a warp (64x4 to 1024x1), taller than wide (1xN,
+    // 4x256), plus 7x3 and 33x5, which leave partial blocks along every edge.
     // All of them take C input channels.
     v.push_back({"cuda/32x8", conv2d_cuda, [] {}, false, true});
-    const int blocks[][2] = {{8, 8}, {16, 16}, {32, 32}, {128, 1}, {1, 256}, {7, 3}};
+    const int blocks[][2] = {{8, 8}, {16, 16}, {32, 32}, {64, 4}, {64, 16}, {128, 1},
+                             {256, 4}, {1024, 1}, {1, 256}, {4, 256}, {7, 3}, {33, 5}};
     for (const auto& b : blocks) {
         const int bx = b[0], by = b[1];
         v.push_back({fmt("cuda/%dx%d", bx, by),
@@ -147,8 +150,11 @@ std::vector<Impl> all_impls() {
 #endif
 
 #if defined(CONV_HAVE_CUDA) && defined(CONV_HAVE_CUDA_VARIANTS)
-    // Test each variant with a regular block and an odd block that leaves
-    // partial blocks, including at image boundaries.
+    // Test each variant with the default block, blocks wider than a warp
+    // (64x4, 128x8 = 1024 threads, 256x1), a tall one (1x128), and odd
+    // blocks that leave partial blocks at image boundaries (7x3, 33x5).
+    // For the shared-tile variants the wide blocks also mean wide tiles; all
+    // of these fit in 48 KB of shared memory for K <= 11.
     const struct { const char* name; CudaVariant variant; } extra_variants[] = {
         {"cuda_opt", CudaVariant::Tiled},
         {"cuda_const", CudaVariant::Constant},
@@ -158,7 +164,8 @@ std::vector<Impl> all_impls() {
         {"cuda_multiout_tiled", CudaVariant::MultiOutputTiled},
         {"cuda_multiout_tiled_const", CudaVariant::MultiOutputTiledConstant}
     };
-    const int extra_blocks[][2] = {{32, 8}, {7, 3}};
+    const int extra_blocks[][2] = {{32, 8}, {64, 4}, {128, 8}, {256, 1}, {1, 128},
+                                   {7, 3}, {33, 5}};
     for (const auto& item : extra_variants) {
         for (const auto& block : extra_blocks) {
             const int bx = block[0], by = block[1];
@@ -203,7 +210,13 @@ std::string run(const Impl& im, const Image& in, const Image& k,
     const Image in_before = in, k_before = k;
 
     im.setup();
-    im.fn(in.data(), buf.data() + kGuard, k.data(), C, H, W, K);
+    // A CUDA launcher that rejects a configuration throws; report that as a
+    // failure of this check instead of aborting the whole run.
+    try {
+        im.fn(in.data(), buf.data() + kGuard, k.data(), C, H, W, K);
+    } catch (const std::exception& e) {
+        return std::string("threw: ") + e.what();
+    }
 
     out.assign(buf.begin() + kGuard, buf.begin() + kGuard + n);
     for (size_t i = 0; i < kGuard; ++i) {
@@ -556,6 +569,43 @@ void test_multichannel_random(Tester& t) {
                 check_random(t, C, s[0], s[1], K, fmt("%dx%d C=%d K=%d", s[0], s[1], C, K));
 }
 
+// Channel counts and filter sizes beyond the random group above: many
+// channels, large filters, and C*K*K up to the 4096-float constant-memory
+// limit (83*7*7 = 4067), which the constant-memory variants must accept.
+void test_multichannel_configs(Tester& t) {
+    t.begin_group("multi-channel configurations: many channels, large filters");
+    const int shapes[][2] = {{1, 1}, {17, 1}, {33, 65}, {128, 128}};
+    const int configs[][2] = {{4, 9}, {8, 11}, {32, 11}, {64, 7}, {83, 7}, {128, 5}};  // {C, K}
+    for (const auto& s : shapes)
+        for (const auto& ck : configs)
+            check_random(t, ck[0], s[0], s[1], ck[1],
+                         fmt("%dx%d C=%d K=%d", s[0], s[1], ck[0], ck[1]));
+}
+
+// Same multi-channel input three times must give the same bits. The shared-
+// tile kernels reload their tile once per channel, so a missing barrier
+// between channels shows up here as run-to-run differences.
+void test_multichannel_repeatable(Tester& t) {
+    t.begin_group("multi-channel repeatability: identical bits across 3 runs");
+    const int C = 8, H = 257, W = 263, K = 5;
+    Image in((size_t)C * H * W), k((size_t)C * K * K);
+    fill_random(in, seed_for(H, W, K) + C);
+    fill_random(k, seed_for(K, K, H) + C);
+    for (size_t i = 0; i < t.impls().size(); ++i) {
+        if (!t.runs_with(i, C)) continue;
+        Image first, out;
+        std::string err = run(t.impls()[i], in, k, C, H, W, K, first);
+        for (int rep = 1; rep < 3 && err.empty(); ++rep) {
+            err = run(t.impls()[i], in, k, C, H, W, K, out);
+            if (err.empty()) {
+                err = first_mismatch(first, out, W, true);
+                if (!err.empty()) err = fmt("run %d differs from run 0 ", rep) + err;
+            }
+        }
+        t.record(i, fmt("%dx%d C=%d K=%d", H, W, C, K), err);
+    }
+}
+
 // Same input three times must give the same bits. Catches data races and
 // reads of uninitialized memory that happen to land within tolerance.
 void test_repeatable(Tester& t) {
@@ -615,6 +665,8 @@ int main(int argc, char** argv) {
     test_random(t);
     test_multichannel_exact(t);
     test_multichannel_random(t);
+    test_multichannel_configs(t);
+    test_multichannel_repeatable(t);
     test_repeatable(t);
     return t.finish() ? 0 : 1;
 }

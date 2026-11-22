@@ -172,8 +172,8 @@ Every test runs on every implementation that is compiled in:
 |---|---|---|
 | `seq` | Always | Within the error bound |
 | `omp`, `omp_simd`, `omp_blocked` with `static`, `dynamic`, or `guided` and multiple thread counts | Corresponding `src/omp/conv2d_*.cpp` exists | Checked against the sequential and independent references |
-| `cuda/32x8` (the one-call `conv2d_cuda`), `cuda/8x8`, `16x16`, `32x32`, `128x1`, `1x256`, `7x3` | `nvcc` is on the PATH (`make CUDA=0` to skip) | Within the error bound (FMA changes the rounding). `7x3` leaves partial blocks along every edge |
-| `cuda_opt`, `cuda_const`, `cuda_tiled_const`, `cuda_multiout` with `32x8` or `7x3` | CUDA variants are compiled in | Within the error bound; `7x3` exercises partial blocks |
+| `cuda/32x8` (the one-call `conv2d_cuda`), `cuda/8x8`, `16x16`, `32x32`, `64x4`, `64x16`, `128x1`, `256x4`, `1024x1`, `1x256`, `4x256`, `7x3`, `33x5` | `nvcc` is on the PATH (`make CUDA=0` to skip) | Within the error bound (FMA changes the rounding). Includes blocks wider than a warp (up to 1024×1) and taller than wide (1×256, 4×256); `7x3` and `33x5` leave partial blocks along every edge |
+| All seven variants (`cuda_opt`, `cuda_const`, `cuda_tiled_const`, `cuda_multiout`, `cuda_multiout_const`, `cuda_multiout_tiled`, `cuda_multiout_tiled_const`) with `32x8`, `64x4`, `128x8`, `256x1`, `1x128`, `7x3`, `33x5` | CUDA variants are compiled in | Within the error bound. The wide blocks also give the shared-tile variants wide tiles; `7x3` and `33x5` exercise partial blocks |
 
 The tests also check for some memory errors. The output buffer starts as NaN,
 so pixels that are never written fail. Guard values on both sides of the
@@ -189,6 +189,8 @@ afterwards.
 | random | Uniform [−1, 1], 12 shapes (1×1, 1×17, 17×1, primes, 257×263, 1000×1000, …) × K = 1, 3, 5, 7 | Within the error bound of the double-precision loop | General arithmetic and indexing |
 | multi-channel exact (`seq` and all CUDA) | C = 2, 3, 5: a filter that is nonzero in one slice only; an impulse in one channel only; all ones | That input channel; that filter slice rotated 180°; C × the in-bounds tap count | Wrong input-channel offset, input channel paired with the wrong filter slice, channels skipped or repeated |
 | multi-channel random (`seq` and all CUDA) | Uniform [−1, 1], 6 shapes × C = 2, 3, 16 × K = 1, 3, 5, 7 | Within the error bound (with C·K² terms) of the double-precision loop | General multi-channel indexing |
+| multi-channel configurations (`seq` and all CUDA) | 1×1, 17×1, 33×65, 128×128 × (C, K) = (4, 9), (8, 11), (32, 11), (64, 7), (83, 7), (128, 5) | Within the error bound of the double-precision loop | Many channels, large filters, and C·K² = 4067, just under the constant-memory limit of 4096 |
+| multi-channel repeatability (`seq` and all CUDA) | 257×263, C = 8, K = 5, run 3 times | Identical bits every run | A missing barrier between channels in the shared-tile kernels |
 | repeatability | 513×517, K = 7, run 3 times | Identical bits every run | Data races, reads of uninitialized memory |
 
 The hand-derived cases use only small integers and products with 0 or 1, so
@@ -210,7 +212,7 @@ to `true` so that the multi-channel groups also run on it.
 ### External check (part of `make test`; on its own, `make validate`)
 
 1. Runs `bin/conv --dump` once for each shape and implementation, writing
-   raw float32 files to `data/validate/` (gitignored, about 200 MB with the
+   raw float32 files to `data/validate/` (gitignored, about 300 MB with the
    defaults). Old `.bin` files there are deleted first.
 2. Runs `validation/validate.py data/validate`. It first checks the reference
    library itself against known answers: single taps at every filter position,
@@ -224,7 +226,7 @@ Requirements: Python 3 with NumPy and SciPy, or NumPy and PyTorch. Without SciPy
 
 ```
 # VALIDATE_SHAPES: HxWxK, or HxWxKxC for C input channels
-# VALIDATE_IMPLS default: seq, plus cuda if built in
+# VALIDATE_IMPLS default: seq, plus cuda and cuda_multiout_tiled_const if built in
 # shapes with C > 1 skip the OpenMP implementations (single-channel)
 make validate PYTHON=python3 \
               VALIDATE_SHAPES="2048x2048x3 1531x2777x7 1024x768x5x3" \
@@ -232,8 +234,9 @@ make validate PYTHON=python3 \
               VALIDATE_DIR=data/validate
 ```
 
-The defaults include two multi-channel shapes, `1024x768x5x3` and
-`257x263x7x16`. Their dump files are prefixed `{H}x{W}_k{K}_c{C}_`.
+The defaults include small images (`16x16x3`, `31x17x5x4`) and four more
+multi-channel shapes: `1024x768x5x3`, `257x263x7x16`, `300x200x11x8` and
+`128x128x7x64`. Multi-channel dump files are prefixed `{H}x{W}_k{K}_c{C}_`.
 Single-channel dumps keep the `{H}x{W}_k{K}_` prefix.
 
 To validate all five CUDA variants, set
@@ -251,8 +254,7 @@ status: 0 if all pass, 1 if any fail, 2 for missing or malformed files.
   implementation take multi-channel input, but `bin/conv` rejects `--C`
   above 1 for `omp`, `omp_simd` and `omp_blocked`. Multiple
   output channels (`Cout`, one filter per output) are not implemented
-  anywhere. `plot.py` skips rows with `C != 1`, because its figures group by
-  H, W and K only.
+  anywhere.
 - **`convolve()` in `src/seq/conv2d_seq_opt_for_largesize.cpp`.** Not built or
   tested. Its signature differs (`size_t` dimensions, filter after the
   dimensions), so `all_impls()` needs a short wrapper for it.
@@ -293,10 +295,16 @@ What is benchmarked:
 
 | Experiment | Configurations | Measures |
 |---|---|---|
-| `baseline` | every implementation × 256², 512², 1024², 2048² × K = 3, 5, 7 | time per call, speedup over `seq`, CUDA kernel-only vs end-to-end and the time spent in each stage |
-| `omp` | OpenMP × 1, 2, 4, … cores threads × `static` / `dynamic` / `guided` | thread scaling and scheduling policy |
-| `cuda_blocks` | CUDA × 13 thread-block shapes (e.g. 32×8, 16×16, 1×128) | effect of block shape and memory coalescing |
+| `baseline` | every implementation × 16², 32², 64², 128², 256², 512², 1024², 2048² × K = 3, 5, 7 | time per call, speedup over `seq` (the sizes below 256² find where parallel versions stop paying off, H2), CUDA kernel-only vs end-to-end and the time spent in each stage |
+| `omp` | OpenMP × 1, 2, 4, … cores threads × `static` / `dynamic` / `guided`, at 64², 512², 2048² | thread scaling and scheduling policy, including a small image |
+| `cuda_blocks` | CUDA × 26 thread-block shapes: warp-wide rows, squares, rows wider than 32 (64×4 to 1024×1), columns taller than 32 (1×128 to 1×512, 4×64 to 16×64) | effect of block shape and memory coalescing |
 | `torch` | PyTorch `conv2d` on the GPU when available and on the CPU, same problems as `baseline` | an external reference point; GPU execution can use cuDNN |
+| `channels` | `seq` and every CUDA implementation × C = 1, 3, 8, 16, 32, 64 × 256², 512², 1024² × K = 3, 5, 7; PyTorch on the same problems | multi-channel input: time, speedup, and copy share as C grows; cuDNN on the input it's designed for |
+| `channel_blocks` | CUDA × the 26 block shapes at C = 16, 1024², K = 3, 7 | block shape with multi-channel input |
+
+Block shapes a kernel can't run (for example a shared-memory tile too large
+for a 1024×1 block with a 7×7 filter) make `bin/conv` exit with status 3.
+`bench.sh` records those in `skipped.log` instead of counting them as errors.
 
 When `CHECK=1` (the default), non-sequential driver runs are checked against
 `seq`, and failures are logged to `errors.log`. The script attempts to capture

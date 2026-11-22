@@ -9,7 +9,9 @@ your best GPU kernel against an optimized library such as cuDNN (or
 PyTorch's conv2d), so your results have an external reference point".
 
 Same operation as our spec: F.conv2d is cross-correlation; padding=K//2 gives
-zero padding and a same-size output. Single channel, batch 1.
+zero padding and a same-size output. Batch 1, one output channel, and C input
+channels (--channels, default 1): weight shape (1, C, K, K) sums over the
+input channels exactly like bin/conv --C.
 
 Fairness settings:
   * TF32 disabled (on Ampere+ GPUs cuDNN would otherwise use reduced-
@@ -26,8 +28,9 @@ Fairness settings:
     value > 1 then means "different algorithm", not "wrong answer".
 
 Usage:
-  bench_torch.py --sizes 256 512 1024 2048 --ks 3 5 7 [--device cuda cpu]
-                 [--threads 16] [--iters N] [--warmup 2] [--out file.csv] [--no-check]
+  bench_torch.py --sizes 256 512 1024 2048 --ks 3 5 7 [--channels 1 3 16]
+                 [--device cuda cpu] [--threads 16] [--iters N] [--warmup 2]
+                 [--out file.csv] [--no-check]
 """
 import argparse
 import os
@@ -53,17 +56,17 @@ def iters_for(n, fixed):
     """Same default as bench.sh: more samples for short runs."""
     if fixed:
         return fixed
-    return 50 if n <= 512 else 20 if n <= 1024 else 10
+    return 200 if n <= 128 else 50 if n <= 512 else 20 if n <= 1024 else 10
 
 
 def error_stats(got, x, w, K):
     """Error vs a float64 reference, normalized by the FP32 dot-product bound
-    2*gamma(K*K)*sum|terms| (same criterion as bin/conv --check)."""
+    2*gamma(C*K*K)*sum|terms| (same criterion as bin/conv --check)."""
     xd, wd = x.double(), w.double()
     ref = F.conv2d(xd, wd, padding=K // 2)
     scale = F.conv2d(xd.abs(), wd.abs(), padding=K // 2)
     u = 2.0 ** -24
-    n = K * K
+    n = x.shape[1] * K * K
     gamma = n * u / (1 - n * u)
     got = got.double()
     nonfinite = int((~torch.isfinite(got)).sum())
@@ -134,6 +137,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--sizes", type=int, nargs="+", default=[256, 512, 1024, 2048])
     ap.add_argument("--ks", type=int, nargs="+", default=[3, 5, 7])
+    ap.add_argument("--channels", type=int, nargs="+", default=[1],
+                    help="input channel counts (C); output is always one channel")
     ap.add_argument("--device", nargs="+", default=["cuda", "cpu"], choices=["cuda", "cpu"])
     ap.add_argument("--threads", type=int, default=os.cpu_count())
     ap.add_argument("--warmup", type=int, default=2)
@@ -161,23 +166,25 @@ def main():
     rng = np.random.default_rng(759)
     for n in a.sizes:
         for K in a.ks:
-            x = torch.from_numpy(rng.uniform(-1, 1, (1, 1, n, n)).astype(np.float32))
-            w = torch.from_numpy(rng.uniform(-1, 1, (1, 1, K, K)).astype(np.float32))
-            iters = iters_for(n, a.iters)
-            runs = []
-            if "cuda" in devices:
-                times, st, y = bench_cuda(x, w, K, a.warmup, iters)
-                runs.append(({"impl": "torch_cudnn", **st}, times, y))
-            if "cpu" in devices:
-                times, y = bench_cpu(x, w, K, a.threads, a.warmup, iters)
-                runs.append(({"impl": "torch_cpu", "threads": a.threads}, times, y))
-            for info, times, y in runs:
-                r = {"H": n, "W": n, "K": K, "C": 1, "iters": len(times),
-                     "median_ms": f"{np.median(times):.4f}", "min_ms": f"{min(times):.4f}", **info}
-                if not a.no_check:
-                    r.update(error_stats(y, x, w, K))
-                print(",".join(str(r.get(c, "")) for c in columns), file=f, flush=True)
-                print(f"  {info['impl']:12s} {n}x{n} K={K} {np.median(times):.3f} ms", file=sys.stderr)
+            for C in a.channels:
+                x = torch.from_numpy(rng.uniform(-1, 1, (1, C, n, n)).astype(np.float32))
+                w = torch.from_numpy(rng.uniform(-1, 1, (1, C, K, K)).astype(np.float32))
+                iters = iters_for(n, a.iters)
+                runs = []
+                if "cuda" in devices:
+                    times, st, y = bench_cuda(x, w, K, a.warmup, iters)
+                    runs.append(({"impl": "torch_cudnn", **st}, times, y))
+                if "cpu" in devices:
+                    times, y = bench_cpu(x, w, K, a.threads, a.warmup, iters)
+                    runs.append(({"impl": "torch_cpu", "threads": a.threads}, times, y))
+                for info, times, y in runs:
+                    r = {"H": n, "W": n, "K": K, "C": C, "iters": len(times),
+                         "median_ms": f"{np.median(times):.4f}", "min_ms": f"{min(times):.4f}", **info}
+                    if not a.no_check:
+                        r.update(error_stats(y, x, w, K))
+                    print(",".join(str(r.get(c, "")) for c in columns), file=f, flush=True)
+                    print(f"  {info['impl']:12s} {n}x{n} K={K} C={C} {np.median(times):.3f} ms",
+                          file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -31,8 +31,11 @@ endif
 # External check (make validate): bin/conv dumps its output for each shape
 # and implementation, then validation/validate.py compares every output with
 # SciPy (or PyTorch). Shapes are HxWxK, or HxWxKxC for C input channels.
-# Implementations default to seq, plus cuda when it is built in. Shapes with
-# C > 1 skip the OpenMP implementations, which are single-channel.
+# Implementations default to seq, plus cuda and cuda_multiout_tiled_const
+# (the variant that combines shared tiles, constant memory and two outputs
+# per thread) when CUDA is built in. Shapes with C > 1 skip the OpenMP
+# implementations, which are single-channel. The shapes cover small images,
+# odd non-square sizes, large filters, and C from 3 up to 64.
 #
 # `make test` runs it after the unit tests. VALIDATE=auto (default) runs it
 # if $(PYTHON) has numpy and scipy (or torch) and otherwise prints SKIPPED;
@@ -42,8 +45,9 @@ VALIDATE        ?= auto
 PYTHON          ?= python3
 VALIDATE_DIR    ?= data/validate
 VALIDATE_SHAPES ?= 2048x2048x3 2048x2048x5 2048x2048x7 1531x2777x7 \
-                   1024x768x5x3 257x263x7x16
-VALIDATE_IMPLS  ?= seq $(if $(filter 1,$(CUDA)),cuda)
+                   16x16x3 31x17x5x4 \
+                   1024x768x5x3 257x263x7x16 300x200x11x8 128x128x7x64
+VALIDATE_IMPLS  ?= seq $(if $(filter 1,$(CUDA)),cuda cuda_multiout_tiled_const)
 
 .PHONY: all test validate clean
 

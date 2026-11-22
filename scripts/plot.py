@@ -4,9 +4,9 @@
 Usage: plot.py RESULTS_DIR [-o PLOTS_DIR]
 
 Reads the CSVs written by scripts/bench.sh (baseline, omp, cuda_blocks,
-torch) and writes PNG figures plus summary.md (Markdown tables) into
-PLOTS_DIR (default: plots/<run name>/). Experiments that weren't run are
-skipped. Needs pandas and matplotlib.
+torch, channels, torch_channels, channel_blocks) and writes PNG figures plus
+summary.md (Markdown tables) into PLOTS_DIR (default: plots/<run name>/).
+Experiments that weren't run are skipped. Needs pandas and matplotlib.
 
   Figure                         Proposal item
   fig1_time.png                  execution time for each implementation, across image and filter sizes
@@ -20,6 +20,10 @@ skipped. Needs pandas and matplotlib.
   fig9_cuda_kernel_time.png      CUDA kernel times at the baseline block
   fig10_cuda_kernel_speedup.png  CUDA kernel speedup vs cuda at the same configuration
   fig11_cuda_call_speedup.png    Full-call speedup vs cuda at the same configuration
+  fig12_channels_time.png        multi-channel input: time per call vs channel count
+  fig13_channels_speedup.png     multi-channel input: speedup over seq vs channel count
+  fig14_channels_transfer.png    multi-channel input: share of CUDA time spent copying
+  (fig6_cuda_blocks.png also gets panels for the channel_blocks sweep)
 """
 import argparse
 import math
@@ -55,6 +59,11 @@ plt.rcParams.update({
 
 STYLE = {}
 
+EXPERIMENTS = {"baseline", "omp", "cuda_blocks", "torch",
+               "channels", "torch_channels", "channel_blocks"}
+# Sweeps over the input-channel count. Everything else is single-channel.
+CHANNEL_EXPERIMENTS = {"channels", "torch_channels", "channel_blocks"}
+
 
 def set_styles(names):
     # seq first, then CPU parallel, then CUDA, then the external reference.
@@ -73,7 +82,7 @@ def load(results):
     for f in sorted(Path(results).glob("*.csv")):
         # Attachment downloads may rename cuda_blocks.csv to cuda_blocks(1).csv.
         experiment = re.sub(r"\s*\(\d+\)$", "", f.stem)
-        if experiment not in {"baseline", "omp", "cuda_blocks", "torch"}:
+        if experiment not in EXPERIMENTS:
             continue
         if experiment in seen_experiments:
             sys.exit(f"multiple files map to '{experiment}': {seen_experiments[experiment]} and {f.name}; "
@@ -101,13 +110,13 @@ def load(results):
         df["schedule"] = np.nan
     # Input channels (bin/conv --C). Older CSVs have no C column: one channel.
     df["C"] = pd.to_numeric(df["C"], errors="coerce").fillna(1) if "C" in df else 1.0
-    # The figures group by H, W and K only, so multi-channel rows would be
-    # mixed in with single-channel ones. Leave them out until they get plots.
-    multi = df["C"] != 1
-    if multi.any():
-        print(f"Skipping {int(multi.sum())} multi-channel rows (C != 1); not plotted yet",
+    # The single-channel figures group by H, W and K only. Multi-channel rows
+    # belong to the channel sweeps; any elsewhere would be mixed in, so drop them.
+    stray = (df["C"] != 1) & ~df.experiment.isin(CHANNEL_EXPERIMENTS)
+    if stray.any():
+        print(f"Skipping {int(stray.sum())} multi-channel rows outside the channel sweeps",
               file=sys.stderr)
-        df = df[~multi].copy()
+        df = df[~stray].copy()
     invalid = (df[["H", "W", "K", "median_ms"]].isna().any(axis=1) |
                ~np.isfinite(df[["H", "W", "K"]]).all(axis=1) |
                ~np.isfinite(df["median_ms"]) | (df["median_ms"] <= 0) |
@@ -124,13 +133,15 @@ def load(results):
     df["compute_ms"] = df.kernel_ms.where(df.is_cuda, df.median_ms)
     df.loc[~np.isfinite(df.compute_ms) | (df.compute_ms <= 0), "compute_ms"] = np.nan
     df["gflops"] = df.flops / (df.compute_ms * 1e6)
-    # Prefer the seq timing measured in the same sweep; use the baseline sweep
-    # for sweeps such as cuda_blocks that do not contain their own seq row.
+    # Prefer the seq timing measured in the same sweep; for sweeps such as
+    # cuda_blocks or torch that have no seq row of their own, use seq from the
+    # baseline (C = 1) or channels sweep with the same H, W, K and C.
     seq_rows = df[(df.impl == "seq") & (df["pass"] != 0)]
-    seq = seq_rows.groupby(["experiment", "H", "W", "K"]).median_ms.median().rename("seq_ms")
-    baseline = seq_rows[seq_rows.experiment == "baseline"].groupby(["H", "W", "K"]).median_ms.median().rename("baseline_seq_ms")
-    df = df.join(seq, on=["experiment", "H", "W", "K"])
-    df = df.join(baseline, on=["H", "W", "K"])
+    seq = seq_rows.groupby(["experiment", "H", "W", "K", "C"]).median_ms.median().rename("seq_ms")
+    baseline = (seq_rows[seq_rows.experiment.isin(["baseline", "channels"])]
+                .groupby(["H", "W", "K", "C"]).median_ms.median().rename("baseline_seq_ms"))
+    df = df.join(seq, on=["experiment", "H", "W", "K", "C"])
+    df = df.join(baseline, on=["H", "W", "K", "C"])
     df["seq_ms"] = df.seq_ms.fillna(df.baseline_seq_ms)
     df["speedup"] = df.seq_ms / df.median_ms
     df["speedup_kernel"] = df.seq_ms / df.compute_ms
@@ -318,19 +329,23 @@ def fig_omp(df, out, made):
 
 
 def fig_blocks(df, out, made):
-    d = df[(df.experiment == "cuda_blocks") & df.is_cuda & df.bx.notna() & df.by.notna() &
+    """Block-shape sweeps: cuda_blocks (C = 1) and channel_blocks (C > 1)."""
+    d = df[df.experiment.isin(["cuda_blocks", "channel_blocks"]) & df.is_cuda &
+           df.bx.notna() & df.by.notna() &
            np.isfinite(df.kernel_ms) & (df.kernel_ms > 0)].copy()
     if d.empty:
         return None
     d["block"] = d.bx.astype(int).astype(str) + "×" + d.by.astype(int).astype(str)
-    workloads = sorted(d[["H", "W", "K"]].drop_duplicates().itertuples(index=False, name=None))
+    workloads = sorted(d[["C", "H", "W", "K"]].drop_duplicates().itertuples(index=False, name=None))
     cols = min(2, len(workloads))
     rows = math.ceil(len(workloads) / cols)
-    fig, axes = plt.subplots(rows, cols, figsize=(8.0 * cols, 4.3 * rows), squeeze=False)
+    n_blocks = d.block.nunique()
+    row_h = max(4.3, 0.22 * n_blocks + 1.2)
+    fig, axes = plt.subplots(rows, cols, figsize=(8.0 * cols, row_h * rows), squeeze=False)
     cmap = LinearSegmentedColormap.from_list("seq", SEQ_RAMP)
     im = None
-    for ax, (h, w, k) in zip(axes.flat, workloads):
-        g = d[(d.H == h) & (d.W == w) & (d.K == k)]
+    for ax, (c, h, w, k) in zip(axes.flat, workloads):
+        g = d[(d.C == c) & (d.H == h) & (d.W == w) & (d.K == k)]
         piv = g.pivot_table(index="block", columns="impl", values="kernel_ms", aggfunc="median")
         block_order = sorted(piv.index, key=lambda s: tuple(map(int, s.split("×"))))
         impl_order = sorted(piv.columns)
@@ -346,11 +361,12 @@ def fig_blocks(df, out, made):
         ax.set_yticks(range(len(block_order)))
         ax.set_yticklabels(block_order, fontsize=8)
         ax.set_ylabel("block (x × y)")
-        ax.set_title(f"{int(h)}×{int(w)} image, {int(k)}×{int(k)} filter")
+        c_label = "" if c == 1 else f", {int(c)} input channels"
+        ax.set_title(f"{int(h)}×{int(w)} image, {int(k)}×{int(k)} filter{c_label}")
         ax.grid(False)
     for ax in list(axes.flat)[len(workloads):]:
         ax.set_visible(False)
-    fig.subplots_adjust(left=0.06, right=0.88, bottom=0.19, top=0.92, wspace=0.25, hspace=0.65)
+    fig.subplots_adjust(left=0.06, right=0.88, bottom=0.12, top=0.95, wspace=0.25, hspace=0.35)
     cb = fig.colorbar(im, cax=fig.add_axes([0.91, 0.25, 0.015, 0.55]), ticks=[0, 1, 2])
     cb.ax.set_yticklabels(["1× (best)", "2×", "≥4×"])
     cb.set_label("time / fastest block for the same variant and workload")
@@ -450,7 +466,7 @@ def by_config(d, value):
     return t.dropna(axis=1, how="all")
 
 
-def summary(df, out, omp, blocks, best, failed, results_dir, cuda_comparison):
+def summary(df, out, omp, blocks, best, failed, results_dir, cuda_comparison, channels=None):
     p = ["# Benchmark results\n"]
     p.append(f"{len(df)} usable timing rows; {len(failed)} explicitly failed rows excluded from the plots.\n")
     p.append("A `pass=1` field alone does not prove `--check` was enabled; consult the benchmark command or log.\n")
@@ -518,9 +534,13 @@ def summary(df, out, omp, blocks, best, failed, results_dir, cuda_comparison):
         p += [f"\n## OpenMP parallel efficiency at {int(tmax)} threads (%)\n", md(t, "{:.0f}")]
     if blocks is not None:
         p += ["\n## CUDA kernel time by thread block (ms)\n"]
-        for (h, w, k), g in blocks.groupby(["H", "W", "K"]):
+        for (c, h, w, k), g in blocks.groupby(["C", "H", "W", "K"]):
             t = g.pivot_table(index="block", columns="impl", values="kernel_ms", aggfunc="median")
-            p += [f"\n### {int(h)}×{int(w)}, K={int(k)}\n", md(t)]
+            t = t.loc[sorted(t.index, key=lambda s: tuple(map(int, s.split("×"))))]
+            c_label = "" if c == 1 else f", C={int(c)}"
+            p += [f"\n### {int(h)}×{int(w)}, K={int(k)}{c_label}\n", md(t)]
+            p += ["\nRelative to the fastest block for each kernel (1.00 = fastest):\n",
+                  md(t / t.min(), "{:.2f}")]
     if "torch_cudnn" in set(df.impl):
         dd = d[d.is_cuda]
         ref = dd[dd.impl == "torch_cudnn"].groupby(["H", "W", "K"]).compute_ms.median()
@@ -529,10 +549,109 @@ def summary(df, out, omp, blocks, best, failed, results_dir, cuda_comparison):
             ours = ours.assign(rel=ours.set_index(["H", "W", "K"]).index.map(ref) / ours.compute_ms)
             p += ["\n## Our CUDA kernels vs cuDNN: kernel-time ratio (cuDNN time / ours; >1 = ours faster)\n",
                   md(by_config(ours, ours.rel), "{:.2f}")]
+    p += channel_summary(channels)
     if len(failed):
         p += ["\n## Failed correctness checks\n",
-              md(failed.set_index("impl")[["experiment", "H", "K", "bx", "by", "threads", "err_ratio", "nonfinite"]])]
+              md(failed.set_index("impl")[["experiment", "H", "K", "C", "bx", "by", "threads", "err_ratio", "nonfinite"]])]
     (out / "summary.md").write_text("\n".join(p) + "\n", encoding="utf-8")
+
+
+# --------------------------------------------------------------------------
+# Multi-channel input (channels and torch_channels sweeps)
+
+def channel_rows(df):
+    """One row per (impl, H, W, K, C) from the channel sweeps (not the block sweep)."""
+    d = df[df.experiment.isin(["channels", "torch_channels"])]
+    return d.sort_values("threads", na_position="first").groupby(
+        ["experiment", "impl", "H", "W", "K", "C"]).tail(1)
+
+
+def channel_grid(d, y, ylabel, out, name, made, hline=None, logy=True, title=None):
+    """Rows: image sizes. Columns: filter sizes. x: channel count (log 2)."""
+    d = d[d[y].notna() & np.isfinite(d[y])]
+    if logy:
+        d = d[d[y] > 0]
+    if d.empty:
+        return
+    sizes, ks = image_sizes(d), sorted(d.K.unique())
+    cs = sorted(int(c) for c in d.C.unique())
+    fig, axes = plt.subplots(len(sizes), len(ks), figsize=(4.3 * len(ks), 3.3 * len(sizes)),
+                             sharex=True, squeeze=False)
+    for r, (h, w) in enumerate(sizes):
+        for c, k in enumerate(ks):
+            ax = axes[r][c]
+            for impl, g in d[(d.H == h) & (d.W == w) & (d.K == k)].groupby("impl"):
+                g = g.sort_values("C")
+                ax.plot(g.C, g[y], label=impl, **STYLE[impl])
+            if hline is not None:
+                ax.axhline(hline, color=INK2, lw=1, ls="--")
+            ax.set_xscale("log", base=2)
+            ax.set_xticks(cs)
+            ax.set_xticklabels([str(v) for v in cs])
+            ax.minorticks_off()
+            if logy:
+                ax.set_yscale("log")
+            ax.set_title(f"{h}×{w} image, {int(k)}×{int(k)} filter", fontsize=10)
+            if r == len(sizes) - 1:
+                ax.set_xlabel("input channels (C)")
+        axes[r][0].set_ylabel(ylabel)
+    if title:
+        fig.suptitle(title, fontsize=12)
+    legend_below(fig, axes)
+    save(fig, out, name, made)
+
+
+def fig_channels(df, out, made):
+    d = channel_rows(df)
+    if d.empty:
+        return d
+    channel_grid(d, "median_ms", "time per call (ms, log)", out, "fig12_channels_time.png", made,
+                 title="Multi-channel input: end-to-end time per call")
+    channel_grid(d[d.impl != "seq"], "speedup", "speedup over seq (log)", out,
+                 "fig13_channels_speedup.png", made, hline=1,
+                 title="Multi-channel input: end-to-end speedup over seq at the same C")
+    dc = d[d.is_cuda].copy()
+    dc["copy_share"] = (dc.h2d_ms + dc.d2h_ms) / (dc.h2d_ms + dc.kernel_ms + dc.d2h_ms) * 100
+    channel_grid(dc, "copy_share", "% of CUDA time copying", out, "fig14_channels_transfer.png", made,
+                 logy=False, title="Multi-channel input: share of each CUDA call spent on copies")
+    return d
+
+
+def by_channel_config(d, value):
+    config = (d.H.astype(int).astype(str) + "×" + d.W.astype(int).astype(str) +
+              ", K=" + d.K.astype(int).astype(str) + ", C=" + d.C.astype(int).astype(str))
+    t = d.assign(config=config, v=value).pivot_table(
+        index=["H", "W", "K", "C", "config"], columns="impl", values="v", aggfunc="median")
+    t = t.reset_index(level=["H", "W", "K", "C"], drop=True)
+    t.index.name = "workload"
+    return t.dropna(axis=1, how="all")
+
+
+def channel_summary(d):
+    if d is None or d.empty:
+        return []
+    p = ["\n## Multi-channel input: execution time, end-to-end (ms, median)\n",
+         "FLOPs scale with C: 2 × C × K² × H × W. The OpenMP versions are single-channel and not included.\n",
+         md(by_channel_config(d, d.median_ms))]
+    dd = d[d.impl != "seq"]
+    if not dd.empty:
+        p += ["\n## Multi-channel input: speedup over seq at the same C, end-to-end\n",
+              md(by_channel_config(dd, dd.speedup), "{:.2f}")]
+    dc = d[d.is_cuda]
+    if not dc.empty:
+        p += ["\n## Multi-channel input: CUDA kernel-only speedup over seq\n",
+              md(by_channel_config(dc, dc.speedup_kernel), "{:.2f}"),
+              "\n## Multi-channel input: share of CUDA time spent copying (h2d + d2h)\n",
+              md(by_channel_config(dc, (dc.h2d_ms + dc.d2h_ms) / (dc.h2d_ms + dc.kernel_ms + dc.d2h_ms) * 100),
+                 "{:.0f}%")]
+        if "torch_cudnn" in set(dc.impl):
+            ref = dc[dc.impl == "torch_cudnn"].groupby(["H", "W", "K", "C"]).compute_ms.median()
+            ours = dc[~dc.impl.str.startswith("torch")]
+            if not ours.empty:
+                ours = ours.assign(rel=ours.set_index(["H", "W", "K", "C"]).index.map(ref) / ours.compute_ms)
+                p += ["\n## Multi-channel input: our CUDA kernels vs cuDNN (cuDNN kernel time / ours; >1 = ours faster)\n",
+                      md(by_channel_config(ours, ours.rel), "{:.2f}")]
+    return p
 
 
 def main():
@@ -551,16 +670,20 @@ def main():
         sys.exit("no usable rows remain after excluding failed checks")
     set_styles(df.impl.unique())
     made = []
-    fig_time_speedup(df, out, made)
-    fig_cuda_kernel_vs_e2e(df, out, made)
-    fig_cuda_breakdown(df, out, made)
-    omp = fig_omp(df, out, made)
+    # Single-channel figures use the C = 1 sweeps; the channel sweeps get
+    # their own figures, and fig_blocks takes both block sweeps.
+    single = df[~df.experiment.isin(CHANNEL_EXPERIMENTS)].copy()
+    fig_time_speedup(single, out, made)
+    fig_cuda_kernel_vs_e2e(single, out, made)
+    fig_cuda_breakdown(single, out, made)
+    omp = fig_omp(single, out, made)
     blocks = fig_blocks(df, out, made)
-    fig_throughput(df, out, made)
-    best = fastest_table(df)
+    fig_throughput(single, out, made)
+    best = fastest_table(single)
     fig_fastest(best, out, made)
-    cuda_comparison = fig_cuda_variants(df, out, made)
-    summary(df, out, omp, blocks, best, failed, res, cuda_comparison)
+    cuda_comparison = fig_cuda_variants(single, out, made)
+    channels = fig_channels(df, out, made)
+    summary(single, out, omp, blocks, best, failed, res, cuda_comparison, channels)
     print(f"{out}: " + ", ".join(made + ["summary.md"]))
 
 

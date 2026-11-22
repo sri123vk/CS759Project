@@ -29,10 +29,18 @@ Laptop runs are for checking the scripts.
 
 | Experiment | Sweep (defaults) | Proposal item |
 |---|---|---|
-| `baseline` | each implementation × 256², 512², 1024², 2048² × K = 3, 5, 7. OpenMP: all cores, static. CUDA: 32×8 block | execution time; OpenMP/CUDA speedup vs sequential; differences across image and filter sizes; CUDA kernel-only vs end-to-end (the CUDA rows carry `h2d_ms`, `kernel_ms`, `d2h_ms`) |
-| `omp` | OpenMP implementations × threads 1, 2, 4, …, nproc × `static`/`dynamic`/`guided`, at 512² and 2048², K = 3, 7 | OpenMP thread scaling; static vs dynamic scheduling |
-| `cuda_blocks` | CUDA implementations × 13 block shapes (32×8, 16×16, 128×1, 1×128, …), 1024² and 2048², K = 3, 7 | CUDA thread-block configuration; global-memory access patterns (1×N blocks are uncoalesced) |
+| `baseline` | each implementation × 16², 32², 64², 128², 256², 512², 1024², 2048² × K = 3, 5, 7. OpenMP: all cores, static. CUDA: 32×8 block | execution time; OpenMP/CUDA speedup vs sequential; differences across image and filter sizes; where the parallel versions stop beating seq (H2, from the sizes below 256²); CUDA kernel-only vs end-to-end (the CUDA rows carry `h2d_ms`, `kernel_ms`, `d2h_ms`) |
+| `omp` | OpenMP implementations × threads 1, 2, 4, …, nproc × `static`/`dynamic`/`guided`, at 64², 512² and 2048², K = 3, 7 | OpenMP thread scaling; static vs dynamic scheduling; threading overhead on a small image |
+| `cuda_blocks` | CUDA implementations × 26 block shapes, 1024² and 2048², K = 3, 7: warp-wide rows (32×4 to 32×32), squares (8×8, 16×16), rows wider than a warp (64×4 to 64×16, 128×1 to 128×8, 256×1 to 256×4, 512×1, 512×2, 1024×1) and columns taller than 32 (1×128, 1×256, 1×512, 4×64, 8×64, 16×64) | CUDA thread-block configuration; global-memory access patterns (1×N blocks are uncoalesced) |
 | `torch` | PyTorch `conv2d`, cuDNN on the GPU and PyTorch's CPU convolution (oneDNN), same problems as `baseline` | review: "compare against cuDNN or PyTorch's conv2d" |
+| `channels` | `seq` and every CUDA implementation × C = 1, 3, 8, 16, 32, 64 input channels × 256², 512², 1024² × K = 3, 5, 7, at the 32×8 block; PyTorch on the same problems (`torch_channels.csv`) | review: multi-channel input. How time, speedup and the copy share change with C, and how our kernels compare with cuDNN on the kind of input it is built for |
+| `channel_blocks` | CUDA implementations × the 26 block shapes at C = 16, 1024², K = 3, 7 | whether multi-channel input changes the best block shape (the shared-tile kernels reload their tile once per channel) |
+
+Some block shapes can't run every kernel: a 1024×1 block with a 7×7 filter
+needs a larger shared-memory tile than `cuda_multiout_tiled` allows, and the
+constant-memory variants need C·K² ≤ 4096. `bin/conv` exits with status 3
+for those. `bench.sh` lists them in `skipped.log` and the final line counts
+them as skipped, not as errors.
 
 All sweep parameters can be overridden with environment variables, listed at
 the top of `scripts/bench.sh`. For example, to extend the sweep toward the
@@ -57,9 +65,13 @@ reviewers' "deeper studies":
 | `fig3_cuda_kernel_vs_e2e.png` | CUDA speedup counting the kernel only (solid) vs including copies (dotted) |
 | `fig4_cuda_breakdown.png` | share of CUDA time in host→device copy, kernel, device→host copy |
 | `fig5_omp_scaling.png` | speedup vs threads for each schedule, with the ideal line |
-| `fig6_cuda_blocks.png` | kernel time for each block shape, relative to the best shape |
+| `fig6_cuda_blocks.png` | kernel time for each block shape, relative to the best shape (with extra panels for the `channel_blocks` sweep) |
 | `fig7_throughput.png` | GFLOP/s (kernel only for GPU rows), including the cuDNN / PyTorch reference |
 | `fig8_fastest.png` | the fastest of our implementations for each workload |
+| `fig9`–`fig11` | CUDA kernel time, and kernel and full-call speedup of each variant over `cuda` |
+| `fig12_channels_time.png` | multi-channel input: time per call vs C, one panel per image and filter size |
+| `fig13_channels_speedup.png` | multi-channel input: speedup over `seq` at the same C |
+| `fig14_channels_transfer.png` | multi-channel input: share of each CUDA call spent copying |
 | `summary.md` | tables: times, speedups, crossover sizes, fastest implementation, OpenMP speedup and efficiency, block-shape times, our kernels vs cuDNN, any failed correctness checks |
 
 Each implementation keeps the same color and marker in every figure.
@@ -91,8 +103,8 @@ Naming convention used by the sweeps:
   `seq` with the FP32 error bound described in the README (`CHECK=0` turns it off).
   A failing row is still recorded. It's logged in `errors.log` and listed in
   `summary.md`. `euler.slurm` runs `make test` first and stops if it fails.
-- **Repetitions.** 2 warm-up runs, then 50 timed runs up to 512², 20 at 1024²,
-  and 10 above. Short runs get more samples because they're noisier. We
+- **Repetitions.** 2 warm-up runs, then 200 timed runs up to 128², 50 up to
+  512², 20 at 1024², and 10 above. Short runs get more samples because they're noisier. We
   report the median; `ITERS` and `WARMUP` override these counts.
 - **CPU.** OpenMP threads are pinned (`OMP_PROC_BIND=close`, `OMP_PLACES=cores`)
   so the scaling curves are stable. The schedule is always set explicitly,
@@ -117,7 +129,7 @@ Each file has `threads,schedule` followed by `bin/conv`'s own columns,
 taking the header from `bin/conv --header`. If the driver gains columns
 later, the CSVs follow automatically. `threads` is 1 for seq and empty for
 CUDA; `schedule` is set only for OpenMP rows. The FLOP count
-(2·K²·H·W) and GFLOP/s are computed in `plot.py`.
+(2·C·K²·H·W) and GFLOP/s are computed in `plot.py`.
 
 ## Compiler vectorization study
 
@@ -154,11 +166,10 @@ python3 scripts/plot_vec.py results/vec-final   # -> plots/vec-final/fig_vec_spe
 
 These need support in the driver first. Once it's there, they're one more
 experiment function in `bench.sh`:
-- **Multi-channel input** (review). `bin/conv --C` now sets the number of
-  input channels for `seq` and every CUDA implementation, but `plot.py` skips
-  rows with `C != 1`. Multi-channel OpenMP versions, multiple output channels
-  (`Cout`), a `bench.sh` experiment over C, and plots by channel count are
-  still needed.
+- **Multi-channel OpenMP and multiple output channels.** The `channels`
+  experiment covers `seq` and the CUDA implementations. The OpenMP versions
+  are still single-channel, and multiple output channels (`Cout`) are not
+  implemented.
 - **Pinned vs pageable host memory.** This would show how much of the
   transfer cost (H3) can be recovered. Needs a `--pinned` option.
 
