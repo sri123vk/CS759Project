@@ -39,6 +39,7 @@
 #   ITERS        timed runs per point [auto: 200 up to 128^2, 50 up to 512^2, 20 at 1024^2, 10 above]
 #   WARMUP       [2]
 #   CHECK        [1]  --check every run against seq (0 to skip)
+#   TORCH        [1]  0 skips the PyTorch reference (torch, and its part of channels)
 #   CONV [bin/conv]   PYTHON [python3]
 set -uo pipefail
 
@@ -102,6 +103,7 @@ CH_BLOCK_KS=${CH_BLOCK_KS:-"3 7"}
 WARMUP=${WARMUP:-2}
 ITERS=${ITERS:-}
 CHECK=${CHECK:-1}
+TORCH=${TORCH:-1}
 
 # Stable thread placement for the scaling runs (override by setting them).
 export OMP_PROC_BIND=${OMP_PROC_BIND:-close}
@@ -210,8 +212,11 @@ exp_omp() {
     local csv=$OUT/omp.csv i n k t s
     local omps; omps=$(impls_matching 'omp*')
     [[ -n $omps ]] || { echo "  driver has no OpenMP implementation yet; skipping" >&2; return; }
+    # seq is the speedup baseline; it runs only if seq is in IMPLS, so an
+    # OpenMP-only rerun (IMPLS="omp omp_simd omp_blocked") doesn't repeat it.
+    local with_seq; with_seq=$(impls_matching seq)
     for n in $OMP_SIZES; do for k in $OMP_KS; do
-        run "$csv" 1 "" --impl seq --size "$n" --K "$k" --iters "$(iters_for "$n")"  # speedup baseline
+        [[ -n $with_seq ]] && run "$csv" 1 "" --impl seq --size "$n" --K "$k" --iters "$(iters_for "$n")"
         for i in $omps; do for s in $SCHEDULES; do for t in $THREADS; do
             run "$csv" "$t" "$s" --impl "$i" --size "$n" --K "$k" --iters "$(iters_for "$n")"
         done; done; done
@@ -232,6 +237,7 @@ exp_cuda_blocks() {
 }
 
 exp_torch() {
+    ((TORCH)) || { echo "  TORCH=0; skipping" >&2; return; }
     if ! "$PYTHON" -c 'import torch' 2>/dev/null; then
         echo "  $PYTHON has no torch; skipping (see BENCHMARK.md)" >&2
         return
@@ -261,7 +267,9 @@ exp_channels() {
             esac
         done; done; done
     done
-    if "$PYTHON" -c 'import torch' 2>/dev/null; then
+    if ! ((TORCH)); then
+        echo "  TORCH=0; multi-channel PyTorch reference skipped" >&2
+    elif "$PYTHON" -c 'import torch' 2>/dev/null; then
         local args=(--sizes $CH_SIZES --ks $CH_KS --channels $CHANNELS --threads "$NPROC"
                     --warmup "$WARMUP" --out "$OUT/torch_channels.csv")
         [[ -n $ITERS ]] && args+=(--iters "$ITERS")

@@ -33,7 +33,7 @@ Laptop runs are for checking the scripts.
 | `omp` | OpenMP implementations × threads 1, 2, 4, …, nproc × `static`/`dynamic`/`guided`, at 64², 512² and 2048², K = 3, 7 | OpenMP thread scaling; static vs dynamic scheduling; threading overhead on a small image |
 | `cuda_blocks` | CUDA implementations × 26 block shapes, 1024² and 2048², K = 3, 7: warp-wide rows (32×4 to 32×32), squares (8×8, 16×16), rows wider than a warp (64×4 to 64×16, 128×1 to 128×8, 256×1 to 256×4, 512×1, 512×2, 1024×1) and columns taller than 32 (1×128, 1×256, 1×512, 4×64, 8×64, 16×64) | CUDA thread-block configuration; global-memory access patterns (1×N blocks are uncoalesced) |
 | `torch` | PyTorch `conv2d`, cuDNN on the GPU and PyTorch's CPU convolution (oneDNN), same problems as `baseline` | review: "compare against cuDNN or PyTorch's conv2d" |
-| `channels` | `seq` and every CUDA implementation × C = 1, 3, 8, 16, 32, 64 input channels × 256², 512², 1024² × K = 3, 5, 7, at the 32×8 block; PyTorch on the same problems (`torch_channels.csv`) | review: multi-channel input. How time, speedup and the copy share change with C, and how our kernels compare with cuDNN on the kind of input it is built for |
+| `channels` | `seq`, the OpenMP versions (all cores, static) and every CUDA implementation × C = 1, 3, 8, 16, 32, 64 input channels × 256², 512², 1024² × K = 3, 5, 7, at the 32×8 block; PyTorch on the same problems (`torch_channels.csv`) | review: multi-channel input. How time, speedup and the copy share change with C, and how our kernels compare with cuDNN on the kind of input it is built for |
 | `channel_blocks` | CUDA implementations × the 26 block shapes at C = 16, 1024², K = 3, 7 | whether multi-channel input changes the best block shape (the shared-tile kernels reload their tile once per channel) |
 
 Some block shapes can't run every kernel: a 1024×1 block with a 7×7 filter
@@ -166,10 +166,9 @@ python3 scripts/plot_vec.py results/vec-final   # -> plots/vec-final/fig_vec_spe
 
 These need support in the driver first. Once it's there, they're one more
 experiment function in `bench.sh`:
-- **Multi-channel OpenMP and multiple output channels.** The `channels`
-  experiment covers `seq` and the CUDA implementations. The OpenMP versions
-  are still single-channel, and multiple output channels (`Cout`) are not
-  implemented.
+- **Multiple output channels.** The `channels` experiment covers every
+  implementation with multi-channel input, but multiple output channels
+  (`Cout`) are not implemented.
 - **Pinned vs pageable host memory.** This would show how much of the
   transfer cost (H3) can be recovered. Needs a `--pinned` option.
 
