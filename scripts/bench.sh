@@ -11,7 +11,7 @@
 #   omp          OpenMP: OMP_NUM_THREADS x OMP_SCHEDULE          thread scaling, static vs dynamic
 #   cuda_blocks  CUDA: thread-block shapes (--block BX BY)       block configuration (H3)
 #   torch        PyTorch conv2d (cuDNN / CPU), same problems     external reference (review)
-#   channels     seq + CUDA x CHANNELS x CH_SIZES x CH_KS        multi-channel input (review)
+#   channels     seq/OpenMP/CUDA x CHANNELS x CH_SIZES x CH_KS   multi-channel input (review)
 #                (and PyTorch on the same problems, if present)
 #   channel_blocks  CUDA block shapes at CH_BLOCK_CS channels    block configuration with C > 1
 #   all          all of the above
@@ -243,19 +243,19 @@ exp_torch() {
     "$PYTHON" "$ROOT/scripts/bench_torch.py" "${args[@]}" 2>>"$ERRLOG" || N_ERR=$((N_ERR + 1))
 }
 
-# Multi-channel input: seq and every CUDA implementation over CHANNELS x
-# CH_SIZES x CH_KS at the baseline block (the OpenMP versions are single-
-# channel). C = 1 is included so each curve starts from the single-channel
+# Multi-channel input: seq, the OpenMP versions and every CUDA implementation
+# over CHANNELS x CH_SIZES x CH_KS. As in the baseline, OpenMP runs on all
+# cores with a static schedule and CUDA at the baseline block. C = 1 is
+# included so each curve starts from the single-channel
 # case measured the same way. PyTorch runs the same problems if available;
 # cuDNN is built for multi-channel input, so this is its fairer comparison.
 exp_channels() {
     local csv=$OUT/channels.csv i n k c
-    local impls=()
-    for i in "${AVAILABLE[@]}"; do [[ $i == omp* ]] || impls+=("$i"); done
-    for i in "${impls[@]}"; do
+    for i in "${AVAILABLE[@]}"; do
         for n in $CH_SIZES; do for k in $CH_KS; do for c in $CHANNELS; do
             local common=(--impl "$i" --size "$n" --K "$k" --C "$c" --iters "$(iters_for "$n")")
             case $i in
+                omp*)  run "$csv" "$NPROC" static "${common[@]}" ;;
                 cuda*) run "$csv" "" "" "${common[@]}" --block $BLOCK ;;
                 *)     run "$csv" 1 "" "${common[@]}" ;;
             esac

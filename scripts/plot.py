@@ -631,7 +631,7 @@ def channel_summary(d):
     if d is None or d.empty:
         return []
     p = ["\n## Multi-channel input: execution time, end-to-end (ms, median)\n",
-         "FLOPs scale with C: 2 × C × K² × H × W. The OpenMP versions are single-channel and not included.\n",
+         "FLOPs scale with C: 2 × C × K² × H × W.\n",
          md(by_channel_config(d, d.median_ms))]
     dd = d[d.impl != "seq"]
     if not dd.empty:

@@ -17,8 +17,8 @@
 //                                         when built with -DCONV_HAVE_CUDA_VARIANTS
 //
 // Most tests use one input channel. The multi-channel tests (C > 1) run only
-// on implementations marked `multichannel` in all_impls(): seq and every CUDA
-// implementation (not the OpenMP versions).
+// on implementations marked `multichannel` in all_impls(), which is currently
+// all of them: seq, the OpenMP versions and every CUDA implementation.
 //
 // Exit status: 0 if every check passes, 1 if any fails, 2 on bad usage.
 
@@ -45,16 +45,7 @@ namespace {
 
 // (in, out, k, C, H, W, K), CHW layout.
 using ConvFn = std::function<void(const float*, float*, const float*, int, int, int, int)>;
-using SingleChannelFn = std::function<void(const float*, float*, const float*, int, int, int)>;
 using Image = std::vector<float>;
-
-// Adapts a single-channel implementation. It is only called with C == 1.
-// Unused in a build with neither OpenMP nor CUDA.
-[[maybe_unused]] ConvFn single_channel(SingleChannelFn f) {
-    return [f](const float* in, float* out, const float* k, int /*C*/, int H, int W, int K) {
-        f(in, out, k, H, W, K);
-    };
-}
 
 const float kNaN = std::numeric_limits<float>::quiet_NaN();
 
@@ -96,7 +87,7 @@ std::vector<Impl> all_impls() {
 #else
     const bool vector_bitwise = true;
 #endif
-    const struct { const char* name; SingleChannelFn fn; bool bitwise; } omps[] = {
+    const struct { const char* name; ConvFn fn; bool bitwise; } omps[] = {
 #ifdef CONV_HAVE_OMP
         {"omp", conv2d_omp, true},
 #endif
@@ -119,9 +110,9 @@ std::vector<Impl> all_impls() {
         for (const auto& s : scheds) {
             for (int t : threads) {
                 const omp_sched_t kind = s.kind;
-                v.push_back({fmt("%s/%s/t%d", o.name, s.name, t), single_channel(o.fn),
+                v.push_back({fmt("%s/%s/t%d", o.name, s.name, t), o.fn,
                              [t, kind] { omp_set_num_threads(t); omp_set_schedule(kind, 0); },
-                             o.bitwise});
+                             o.bitwise, /*multichannel=*/true});
             }
         }
     }
