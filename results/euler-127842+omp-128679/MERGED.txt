@@ -1,0 +1,3 @@
+base:  results/euler-127842
+rerun: results/euler-128679-omp
+rows for implementations starting with omp come from the rerun; all other rows from the base.

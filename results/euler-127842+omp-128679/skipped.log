@@ -1,0 +1,6 @@
+--impl cuda_multiout_tiled --size 1024 --K 7 --block 1024 1 --iters 20 --warmup 2 --header --check: unsupported: shared input tile exceeds this kernel's per-block limit 
+--impl cuda_multiout_tiled --size 2048 --K 7 --block 1024 1 --iters 10 --warmup 2 --header --check: unsupported: shared input tile exceeds this kernel's per-block limit 
+--impl cuda_multiout_tiled_const --size 1024 --K 7 --block 1024 1 --iters 20 --warmup 2 --header --check: unsupported: shared input tile exceeds this kernel's per-block limit 
+--impl cuda_multiout_tiled_const --size 2048 --K 7 --block 1024 1 --iters 10 --warmup 2 --header --check: unsupported: shared input tile exceeds this kernel's per-block limit 
+--impl cuda_multiout_tiled --size 1024 --K 7 --C 16 --block 1024 1 --iters 20 --warmup 2 --header --check: unsupported: shared input tile exceeds this kernel's per-block limit 
+--impl cuda_multiout_tiled_const --size 1024 --K 7 --C 16 --block 1024 1 --iters 20 --warmup 2 --header --check: unsupported: shared input tile exceeds this kernel's per-block limit 
