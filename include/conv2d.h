@@ -6,9 +6,8 @@
 //
 // Multi-channel input uses CHW layout: `in` is C planes of H*W floats and `k`
 // is C slices of K*K floats, one per input channel. The output is a single
-// H*W plane; the channels are summed. conv2d_seq and all CUDA versions take C
-// (the variants through CudaConv::C); the OpenMP versions are the C = 1 case
-// and take no C argument.
+// H*W plane; the channels are summed. Every implementation takes C (the CUDA
+// variants through CudaConv::C).
 #pragma once
 
 #include <cstddef>  // std::size_t, used by convolve()
@@ -18,17 +17,18 @@ void conv2d_seq(const float* in, float* out, const float* k,
                 int C, int H, int W, int K);
 
 // OpenMP versions use OMP_NUM_THREADS / OMP_SCHEDULE (or omp_set_*) for
-// their row-parallel loops with schedule(runtime).
+// their row-parallel loops with schedule(runtime). Like conv2d_seq, each
+// sums every output pixel over channel, then filter row, then filter column.
 void conv2d_omp(const float* in, float* out, const float* k,
-                int H, int W, int K);
+                int C, int H, int W, int K);
 
 // SIMD across output columns for each filter tap.
 void conv2d_omp_simd(const float* in, float* out, const float* k,
-                     int H, int W, int K);
+                     int C, int H, int W, int K);
 
 // SIMD across blocks of output columns, retaining block-local sums.
 void conv2d_omp_blocked(const float* in, float* out, const float* k,
-                        int H, int W, int K);
+                        int C, int H, int W, int K);
 
 //optimized version for the large size matrices
 //image rectangle shape handled

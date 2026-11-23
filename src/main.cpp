@@ -7,8 +7,8 @@
 //   cuda_multiout_tiled_const, alongside the existing implementations.
 //
 // Prints one CSV row per run (use --header to print the column names first).
-// --C      input channels (CHW layout; output is one channel). seq and every
-//          CUDA implementation support C > 1; the OpenMP versions don't yet.
+// --C      input channels (CHW layout; output is one channel). Every
+//          implementation supports C > 1.
 // --block  CUDA thread-block shape (default 32 8); auto tunes candidates
 // --check  also runs the sequential version and compares against it
 // --dump   writes in/k/out as raw float32 files for the Python validator
@@ -56,17 +56,11 @@ void usage(const char* prog) {
         "          CPU:  seq omp omp_simd omp_blocked\n"
         "          CUDA: cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout\n"
         "                cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const\n"
-        "          --C > 1 (multi-channel input): seq and all CUDA, not OpenMP\n"
+        "          --C c: input channels, summed into one output (all implementations)\n"
         "          [--iters n] [--warmup n] [--block bx by|auto]\n"
         "          [--check] [--dump dir] [--header]\n",
         prog);
     std::exit(1);
-}
-
-// Implementations that take a channel count: everything except the OpenMP
-// versions, which are single-channel.
-bool supports_multichannel(const std::string& impl) {
-    return impl.rfind("omp", 0) != 0;
 }
 
 Args parse(int argc, char** argv) {
@@ -104,11 +98,6 @@ Args parse(int argc, char** argv) {
     if (a.H <= 0 || a.W <= 0 || a.C <= 0 || a.iters <= 0 || a.warmup < 0 ||
         a.bx <= 0 || a.by <= 0)
         usage(argv[0]);
-    if (a.C != 1 && !supports_multichannel(a.impl)) {
-        std::fprintf(stderr, "impl %s supports only --C 1 (the OpenMP versions are single-channel)\n",
-                     a.impl.c_str());
-        std::exit(1);
-    }
     return a;
 }
 
@@ -123,26 +112,17 @@ bool is_cuda_variant(const std::string& impl) {
 
 // CPU implementations as called by the benchmark: (in, out, k, C, H, W, K).
 using ConvFn = void (*)(const float*, float*, const float*, int, int, int, int);
-using SingleChannelFn = void (*)(const float*, float*, const float*, int, int, int);
-
-// Adapts a single-channel implementation to ConvFn. parse() has already
-// rejected C != 1 for these.
-template <SingleChannelFn F>
-void single_channel(const float* in, float* out, const float* k,
-                    int /*C*/, int H, int W, int K) {
-    F(in, out, k, H, W, K);
-}
 
 ConvFn pick_cpu(const std::string& impl) {
     if (impl == "seq") return conv2d_seq;
 #ifdef CONV_HAVE_OMP
-    if (impl == "omp") return single_channel<conv2d_omp>;
+    if (impl == "omp") return conv2d_omp;
 #endif
 #ifdef CONV_HAVE_OMP_SIMD
-    if (impl == "omp_simd") return single_channel<conv2d_omp_simd>;
+    if (impl == "omp_simd") return conv2d_omp_simd;
 #endif
 #ifdef CONV_HAVE_OMP_BLOCKED
-    if (impl == "omp_blocked") return single_channel<conv2d_omp_blocked>;
+    if (impl == "omp_blocked") return conv2d_omp_blocked;
 #endif
     std::fprintf(stderr, "unknown impl: %s\n", impl.c_str());
     std::exit(1);

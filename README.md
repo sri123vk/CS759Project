@@ -23,20 +23,20 @@ out[r][c] = Σ_ch Σᵢ Σⱼ k[ch][i][j] · in[ch][r+i−R][c+j−R]
 |---|---|
 | Operation | Cross-correlation (filter not flipped), as in image-processing and CNN libraries |
 | Precision | FP32 input, filter, output, and accumulator |
-| Channels | `C` input channels, summed into one output channel. `seq` and every CUDA implementation support `C > 1`; the OpenMP versions are the `C = 1` case |
+| Channels | `C` input channels, summed into one output channel. Every implementation (`seq`, OpenMP and CUDA) supports `C > 1` |
 | Layout | Row-major, channel-major (CHW); pixel `(ch, r, c)` at `in[(ch*H + r)*W + c]`, filter tap `(ch, i, j)` at `k[(ch*K + i)*K + j]` |
 | Filter | Square, positive odd `K`, centered, one `K × K` slice per input channel; benchmarks commonly use 3, 5, and 7 |
 | Boundary | Zero padding; output is `H × W` |
 | Sum order | Channel `ch`, then filter row `i`, then column `j` |
 
-Interfaces (`include/conv2d.h`). The sequential and direct CUDA versions take
-the channel count; the OpenMP versions are single-channel:
+Interfaces (`include/conv2d.h`). The sequential, OpenMP and direct CUDA
+versions all take the channel count:
 
 ```cpp
 void conv2d_seq(const float* in, float* out, const float* k,
                 int C, int H, int W, int K);   // also conv2d_cuda
 void conv2d_<omp variant>(const float* in, float* out, const float* k,
-                          int H, int W, int K);
+                          int C, int H, int W, int K);
 ```
 
 The CUDA benchmark path (`cuda_conv_alloc(C, H, W, K)`, `cuda_conv_run`,
@@ -205,9 +205,9 @@ table gives the totals.
 `tests/test_conv.cpp` with a name, the function, an optional setup step run
 before each call, and whether the output must match `seq` bit for bit. Set
 that flag only if the implementation sums each pixel in `seq`'s order.
-Wrap a single-channel function with `single_channel(...)`. An implementation
-that takes a channel count can instead set the last field, `multichannel`,
-to `true` so that the multi-channel groups also run on it.
+The function takes the channel count, `(in, out, k, C, H, W, K)`. Set the
+last field, `multichannel`, to `true` so that the multi-channel groups also
+run on it (every current implementation does).
 
 ### External check (part of `make test`; on its own, `make validate`)
 
@@ -226,8 +226,8 @@ Requirements: Python 3 with NumPy and SciPy, or NumPy and PyTorch. Without SciPy
 
 ```
 # VALIDATE_SHAPES: HxWxK, or HxWxKxC for C input channels
-# VALIDATE_IMPLS default: seq, plus cuda and cuda_multiout_tiled_const if built in
-# shapes with C > 1 skip the OpenMP implementations (single-channel)
+# VALIDATE_IMPLS default: seq and every OpenMP version built, plus cuda and
+# cuda_multiout_tiled_const if built in; every implementation runs every shape
 make validate PYTHON=python3 \
               VALIDATE_SHAPES="2048x2048x3 1531x2777x7 1024x768x5x3" \
               VALIDATE_IMPLS="seq cuda" \
@@ -250,11 +250,9 @@ status: 0 if all pass, 1 if any fail, 2 for missing or malformed files.
 
 ### Not hooked up yet
 
-- **The OpenMP versions are single-channel.** `seq` and every CUDA
-  implementation take multi-channel input, but `bin/conv` rejects `--C`
-  above 1 for `omp`, `omp_simd` and `omp_blocked`. Multiple
-  output channels (`Cout`, one filter per output) are not implemented
-  anywhere.
+- **Multiple output channels.** Every implementation takes multi-channel
+  input, but multiple output channels (`Cout`, one filter per output) are
+  not implemented anywhere.
 - **`convolve()` in `src/seq/conv2d_seq_opt_for_largesize.cpp`.** Not built or
   tested. Its signature differs (`size_t` dimensions, filter after the
   dimensions), so `all_impls()` needs a short wrapper for it.
