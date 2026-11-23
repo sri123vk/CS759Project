@@ -1,0 +1,41 @@
+# conv2d benchmark system info
+date:     2026-11-22T11:50:55-06:00
+host:     euler01.engr.wisc.edu
+git:      96766f4
+branch:   multi-channel_input
+slurm:    job 127842 on euler01, cpus-per-task=16
+
+## build
+CXX       ?= g++
+CXXFLAGS  ?= -O3 -std=c++17 -Wall -Wextra
+NVCC      ?= nvcc
+NVCCFLAGS ?= -O3 -std=c++17 -Xcompiler -Wall,-Wextra
+CXXFLAGS/NVCCFLAGS overrides from the environment: none / none
+g++ (GCC) 13.2.0
+Build cuda_13.0.r13.0/compiler.36260728_0
+
+## cpu
+CPU(s):                                  96
+Model name:                              AMD EPYC 9254 24-Core Processor
+Thread(s) per core:                      2
+Core(s) per socket:                      24
+Socket(s):                               2
+CPU(s) scaling MHz:                      89%
+CPU max MHz:                             4153.1890
+L1d cache:                               1.5 MiB (48 instances)
+L2 cache:                                48 MiB (48 instances)
+L3 cache:                                256 MiB (8 instances)
+NUMA node(s):                            2
+simd: avx avx2 avx512f fma 
+nproc: 16
+OMP_NUM_THREADS= OMP_PROC_BIND=close OMP_PLACES=cores
+               total        used        free      shared  buff/cache   available
+Mem:             251          17         175           0          60         233
+
+## gpu
+name, compute_cap, memory.total [MiB], clocks.max.sm [MHz], clocks.max.memory [MHz], driver_version, pcie.link.gen.max, pcie.link.width.max
+NVIDIA RTX 4000 SFF Ada Generation, 8.9, 20475 MiB, 3105 MHz, 7001 MHz, 580.159.04, 4, 16
+
+## python
+python 3.12.16
+torch 2.15.0+cu132 cuda 13.2 cudnn 92600 gpu True
