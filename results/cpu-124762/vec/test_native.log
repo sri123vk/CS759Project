@@ -1,0 +1,63 @@
+mkdir -p bin/vec/native
+g++ -Iinclude -O3 -std=c++17 -Wall -Wextra -march=native -fopenmp -DCONV_HAVE_OMP -DCONV_HAVE_OMP_SIMD -DCONV_HAVE_OMP_BLOCKED -DCONV_HAVE_OMP_TILED  tests/test_conv.cpp src/conv2d_seq.cpp src/conv2d_omp.cpp src/conv2d_omp_simd.cpp src/conv2d_omp_blocked.cpp src/conv2d_omp_tiled.cpp   -o bin/vec/native/test_conv
+./bin/vec/native/test_conv
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== repeatability: identical bits across 3 runs
+
+implementation             checks   failed
+seq                           285        0
+omp/static/t1                 285        0
+omp/static/t2                 285        0
+omp/static/t3                 285        0
+omp/static/t16                285        0
+omp/dynamic/t1                285        0
+omp/dynamic/t2                285        0
+omp/dynamic/t3                285        0
+omp/dynamic/t16               285        0
+omp/guided/t1                 285        0
+omp/guided/t2                 285        0
+omp/guided/t3                 285        0
+omp/guided/t16                285        0
+omp_simd/static/t1            285        0
+omp_simd/static/t2            285        0
+omp_simd/static/t3            285        0
+omp_simd/static/t16           285        0
+omp_simd/dynamic/t1           285        0
+omp_simd/dynamic/t2           285        0
+omp_simd/dynamic/t3           285        0
+omp_simd/dynamic/t16          285        0
+omp_simd/guided/t1            285        0
+omp_simd/guided/t2            285        0
+omp_simd/guided/t3            285        0
+omp_simd/guided/t16           285        0
+omp_blocked/static/t1         285        0
+omp_blocked/static/t2         285        0
+omp_blocked/static/t3         285        0
+omp_blocked/static/t16        285        0
+omp_blocked/dynamic/t1        285        0
+omp_blocked/dynamic/t2        285        0
+omp_blocked/dynamic/t3        285        0
+omp_blocked/dynamic/t16       285        0
+omp_blocked/guided/t1         285        0
+omp_blocked/guided/t2         285        0
+omp_blocked/guided/t3         285        0
+omp_blocked/guided/t16        285        0
+omp_tiled/static/t1           285        0
+omp_tiled/static/t2           285        0
+omp_tiled/static/t3           285        0
+omp_tiled/static/t16          285        0
+omp_tiled/dynamic/t1          285        0
+omp_tiled/dynamic/t2          285        0
+omp_tiled/dynamic/t3          285        0
+omp_tiled/dynamic/t16         285        0
+omp_tiled/guided/t1           285        0
+omp_tiled/guided/t2           285        0
+omp_tiled/guided/t3           285        0
+omp_tiled/guided/t16          285        0
+
+ALL PASSED
+external check skipped (VALIDATE=0)

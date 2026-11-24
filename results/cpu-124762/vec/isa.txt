@@ -1,0 +1,27 @@
+# sse2: g++ -march=x86-64 on euler01.engr.wisc.edu
+-march=                     		x86-64
+-mavx                       		[disabled]
+-mavx2                      		[disabled]
+-mavx512f                   		[disabled]
+-mavx512vl                  		[disabled]
+-mfma                       		[disabled]
+-msse4.2                    		[disabled]
+
+# avx2: g++ -march=x86-64-v3 on euler01.engr.wisc.edu
+-march=                     		x86-64-v3
+-mavx                       		[enabled]
+-mavx2                      		[enabled]
+-mavx512f                   		[disabled]
+-mavx512vl                  		[disabled]
+-mfma                       		[enabled]
+-msse4.2                    		[enabled]
+
+# native: g++ -march=native on euler01.engr.wisc.edu
+-march=                     		znver4
+-mavx                       		[enabled]
+-mavx2                      		[enabled]
+-mavx512f                   		[enabled]
+-mavx512vl                  		[enabled]
+-mfma                       		[enabled]
+-msse4.2                    		[enabled]
+

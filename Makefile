@@ -9,8 +9,8 @@ CPU_SRCS := src/main.cpp src/conv2d_seq.cpp
 TEST_SRCS := tests/test_conv.cpp src/conv2d_seq.cpp
 HEADERS := include/conv2d.h include/utils.h
 
-# OpenMP variants: omp, omp_simd, omp_blocked
-OMP_VARIANTS := omp omp_simd omp_blocked
+# OpenMP variants: omp, omp_simd, omp_blocked, omp_tiled
+OMP_VARIANTS := omp omp_simd omp_blocked omp_tiled
 OMP_BUILT    := $(strip $(foreach v,$(OMP_VARIANTS),$(if $(wildcard src/conv2d_$(v).cpp),$(v))))
 ifneq ($(OMP_BUILT),)
   OMP_SRCS  := $(OMP_BUILT:%=src/conv2d_%.cpp)

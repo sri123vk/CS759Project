@@ -11,6 +11,7 @@
 //   omp/<schedule>/t<threads>             when built with -DCONV_HAVE_OMP
 //   omp_simd/<schedule>/t<threads>        when built with -DCONV_HAVE_OMP_SIMD
 //   omp_blocked/<schedule>/t<threads>     when built with -DCONV_HAVE_OMP_BLOCKED
+//   omp_tiled/<schedule>/t<threads>       when built with -DCONV_HAVE_OMP_TILED
 //   cuda/<bx>x<by>                        when built with -DCONV_HAVE_CUDA
 //   cuda_opt/<bx>x<by>                    when built with -DCONV_HAVE_CUDA_OPT
 //   cuda_const, cuda_tiled_const, cuda_multiout and the multiout combinations
@@ -32,7 +33,8 @@
 #include "conv2d.h"
 #include "utils.h"
 
-#if defined(CONV_HAVE_OMP) || defined(CONV_HAVE_OMP_SIMD) || defined(CONV_HAVE_OMP_BLOCKED)
+#if defined(CONV_HAVE_OMP) || defined(CONV_HAVE_OMP_SIMD) || defined(CONV_HAVE_OMP_BLOCKED) || \
+    defined(CONV_HAVE_OMP_TILED)
 #define CONV_HAVE_ANY_OMP
 #include <omp.h>
 #endif
@@ -90,6 +92,9 @@ std::vector<Impl> all_impls() {
 #endif
 #ifdef CONV_HAVE_OMP_BLOCKED
         {"omp_blocked", conv2d_omp_blocked, vector_bitwise},
+#endif
+#ifdef CONV_HAVE_OMP_TILED
+        {"omp_tiled", conv2d_omp_tiled, vector_bitwise},
 #endif
     };
     (void)vector_bitwise;  // unused when only conv2d_omp is built
