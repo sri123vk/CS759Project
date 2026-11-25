@@ -22,7 +22,7 @@
 # the omp sweep, names starting with "cuda" through the cuda_blocks sweep.
 #
 # Settings (environment variables, defaults in brackets):
-#   IMPLS        ["seq omp omp_simd omp_blocked cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout ..."]
+#   IMPLS        ["seq omp omp_simd omp_blocked omp_tiled cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout ..."]
 #                also includes cuda_multiout_const, cuda_multiout_tiled,
 #                and cuda_multiout_tiled_const
 #                names the driver doesn't know are skipped
@@ -79,7 +79,7 @@ if ((QUICK)); then
     : "${CHANNELS:=1 16}" "${CH_SIZES:=256}" "${CH_KS:=3}"
     : "${CH_BLOCK_CS:=4}" "${CH_BLOCK_SIZES:=256}" "${CH_BLOCK_KS:=3}"
 fi
-IMPLS=${IMPLS:-"seq omp omp_simd omp_blocked cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const cuda_tiled cuda_tiled_mo"}
+IMPLS=${IMPLS:-"seq omp omp_simd omp_blocked omp_tiled cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const cuda_tiled cuda_tiled_mo"}
 SIZES=${SIZES:-"16 32 64 128 256 512 1024 2048"}
 KS=${KS:-"3 5 7"}
 OMP_SIZES=${OMP_SIZES:-"64 512 2048"}
