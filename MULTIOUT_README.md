@@ -1,5 +1,20 @@
 # Additional CUDA multi-output variants
 
+> **Historical note.** This guide describes how the three multi-output
+> variants were merged into the project. They are now part of the code; the
+> main [README](README.md#implementations) describes the current state.
+> Since this was written:
+>
+> - Every implementation, including these, takes multi-channel input
+>   (`--C`). The constant-memory variants need `C·K² ≤ 4096`, which allows
+>   odd `K ≤ 63` only for one channel.
+> - The unit tests run each variant at seven block shapes (32×8, 64×4,
+>   128×8, 256×1, 1×128, 7×3, 33×5), not only 7×3 and 32×8, and include
+>   multi-channel groups.
+> - The "Verification performed here" section below describes the
+>   CPU-only checks from before the merge. The variants have since been
+>   built and benchmarked on Euler GPUs (`results/euler-127842/`).
+
 This package adds three CUDA implementations while retaining `cuda_multiout`:
 
 | Implementation | Image | Filter | Outputs per thread |

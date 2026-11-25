@@ -6,10 +6,14 @@ ECE 759 · Fall 2026 · Final Project
 
 ## Overview
 
-One 2D convolution, implemented three ways (sequential C++, OpenMP, CUDA)
-and benchmarked across image sizes 256²–2048² and filter sizes 3×3, 5×5, 7×7.
-We also study OpenMP thread count and scheduling, CUDA thread-block shape,
-shared-memory tiling, constant-memory filters, and multiple outputs per thread.
+One 2D convolution, implemented three ways (sequential C++, OpenMP, CUDA):
+12 implementations in all, 4 on the CPU and 8 on the GPU (see
+[Implementations](#implementations)). They are benchmarked across square
+images from 16² to 2048², filter sizes 3×3, 5×5 and 7×7, and 1 to 64 input
+channels. We also study OpenMP thread count and scheduling, compiler
+vectorization, CUDA thread-block shape, shared-memory tiling,
+constant-memory filters, and multiple outputs per thread, and compare
+against PyTorch / cuDNN.
 
 ## Specification
 
@@ -56,7 +60,8 @@ Python cross-checks.
 answers and an independent double-precision loop (`make test`). The separate
 `make validate` target checks selected shapes and implementations against
 `scipy.signal.correlate2d(in, k, mode="same", boundary="fill")` or PyTorch.
-By default, external validation selects `seq` and, when built, `cuda`; other
+By default, external validation checks `seq`, every OpenMP version that is
+built and, when CUDA is built, `cuda` and `cuda_multiout_tiled_const`; other
 variants can be included with `VALIDATE_IMPLS`.
 See [Tests](#tests). Pass: no NaN/Inf in the output, and at every pixel
 `|got − ref| ≤ 2·γ(C·K²)·Σ|k·in|` where `γ(n) = n·u / (1 − n·u)`, `u = 2⁻²⁴`.
@@ -81,14 +86,17 @@ for development only.
 ## Layout
 
 ```
-include/      interface, timing, and I/O helpers
-src/          implementations and benchmark driver
+include/      interface (conv2d.h), timing, I/O and error-bound helpers (utils.h)
+src/          benchmark driver (main.cpp) and implementations: seq/, omp/, cuda/
 tests/        C++ correctness tests (make test)
 validation/   Python check against SciPy / PyTorch (make validate)
-scripts/      benchmark sweeps and Slurm jobs
-results/      raw CSV output and hardware info
-plots/        figures
-report/       final report
+scripts/      benchmark sweeps, plotting and Slurm jobs (see BENCHMARK.md)
+results/      raw CSV output, logs and hardware info, one directory per run
+plots/        figures and summary.md, one directory per run
+report/       final report (empty so far)
+cuda_kernel_variants/, MULTIOUT_README.md
+              integration notes from when the CUDA variants were added;
+              kept for history, superseded by this README
 ```
 
 ## Build and run
@@ -108,9 +116,9 @@ Use `make -B` after changing build options because Make may not detect changes
 in flags. On Euler, load an appropriate CUDA module before building and run
 CUDA tests and benchmarks on a GPU compute node.
 
-Options: `--size N` (or `--H`, `--W`), `--K`, `--C` (input channels,
-default 1; values above 1 are accepted by `seq` and every CUDA implementation,
-not the OpenMP versions), `--iters`, `--warmup`,
+Options: `--size N` (or `--H`, `--W`), `--K` (positive odd, default 3),
+`--C` (input channels, default 1; every implementation accepts values above 1),
+`--iters` (default 10), `--warmup` (default 2),
 `--block BX BY` (CUDA thread block, default 32 8), `--block auto`, `--check`, `--dump DIR`,
 `--header`. Output is one CSV row per run with columns
 `impl,H,W,K,C,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass`;
@@ -120,15 +128,54 @@ reports the selected shape and tuning time separately. Tuning is excluded from
 the reported benchmark times. `--check` must be specified for the `pass` field
 to represent a correctness comparison.
 
-CUDA implementations available through `--impl`:
+Exit status of `bin/conv`: 0 ok, 1 error, 2 `--check` failed, 3 configuration
+not supported (block too large for the GPU or kernel, shared-memory tile too
+big, or `C·K²` over the constant-memory limit).
 
-| Name | Implementation |
-|---|---|
-| `cuda` | Direct baseline; one output per thread. |
-| `cuda_opt` | Shared-memory input tiles with halos and a global-memory filter. Fails with an error if the tile does not fit in shared memory. |
-| `cuda_const` | Direct kernel with filter coefficients in constant memory. |
-| `cuda_tiled_const` | Shared-memory input tiles and a constant-memory filter. |
-| `cuda_multiout` | Two outputs per thread with a global-memory filter. |
+## Implementations
+
+Every name below can be passed to `bin/conv --impl`. All of them take `C`
+input channels and are covered by the unit tests.
+
+**CPU** (`src/seq/`, `src/omp/`). All OpenMP versions parallelize over output
+rows with `schedule(runtime)`, so `OMP_NUM_THREADS` and `OMP_SCHEDULE` control
+them. Each adds a pixel's taps in the same order as `seq` (channel, filter
+row, filter column).
+
+| Name | Function, file | Approach |
+|---|---|---|
+| `seq` | `conv2d_seq`, `src/seq/conv2d_seq.cpp` | Direct loop, one output pixel at a time. Filter bounds are clipped per row and column instead of testing each tap. The speedup baseline |
+| `omp` | `conv2d_omp`, `src/omp/conv2d_omp.cpp` | `seq` with `#pragma omp parallel for` over output rows |
+| `omp_simd` | `conv2d_omp_simd`, `src/omp/conv2d_omp_simd.cpp` | Rows in parallel; each filter tap is applied across a whole output row at once (an axpy) with `omp simd` |
+| `omp_blocked` | `conv2d_omp_blocked`, `src/omp/conv2d_omp_blocked.cpp` | Rows in parallel; output columns in blocks whose running sums stay in a small local array through all `C·K²` taps, vectorized with `omp simd`. Edge and leftover columns are computed one pixel at a time |
+
+**CUDA** (`src/cuda/`). `cuda` is in `conv2d_cuda.cu`; the other seven are in
+`conv2d_cuda_variants.cu` and are run through `cuda_conv_run_variant`.
+
+| Name | Image | Filter | Outputs per thread |
+|---|---|---|---|
+| `cuda` | Global memory | Global memory | 1 |
+| `cuda_opt` | Shared-memory tile with halo | Global memory | 1 |
+| `cuda_const` | Global memory | Constant memory | 1 |
+| `cuda_tiled_const` | Shared-memory tile with halo | Constant memory | 1 |
+| `cuda_multiout` | Global memory | Global memory | 2 |
+| `cuda_multiout_const` | Global memory | Constant memory | 2 |
+| `cuda_multiout_tiled` | Shared-memory tile with halo | Global memory | 2 |
+| `cuda_multiout_tiled_const` | Shared-memory tile with halo | Constant memory | 2 |
+
+- The multi-output kernels compute columns `col0` and `col0 + blockDim.x`, so
+  a block covers `2·bx` columns.
+- The shared-tile kernels load one input channel's tile at a time. They don't
+  fall back to another kernel: if the tile doesn't fit in shared memory,
+  `bin/conv` exits with status 3.
+- The constant-memory kernels upload the filter on every call (counted in
+  `h2d_ms`). They hold all `C` slices in one 4096-float symbol, so they need
+  `C·K² ≤ 4096`. A mutex serializes calls that use the symbol.
+- The variants use 32-bit indexing and reject shapes that would overflow it.
+
+`src/seq/conv2d_seq_opt_for_largesize.cpp` (`convolve()`) is a further
+sequential version. It isn't built, benchmarked or tested; see
+[Not hooked up yet](#not-hooked-up-yet).
 
 ## Tests
 
@@ -161,8 +208,11 @@ There are three kinds of check:
 | Check | Compared against | Sizes | Command |
 |---|---|---|---|
 | Unit tests, `tests/test_conv.cpp` | Hand-derived answers, and a double-precision loop written separately in the test file | 1×1 to 1000×1000 | `make test` |
-| External check, `validation/validate.py` | SciPy `correlate2d` (or PyTorch `conv2d`) in float64 | 2048² and 1531×2777 by default | `make test`, or on its own `make validate` |
-| Driver `--check` | `conv2d_seq` | Any | `bin/conv ... --check` |
+| External check, `validation/validate.py` | SciPy `correlate2d` (or PyTorch `conv2d`) in float64 | 10 default shapes, 16×16 to 1531×2777, C = 1 to 64 | `make test`, or on its own `make validate` |
+| Driver `--check` | `conv2d_seq` | Any | `bin/conv ... --check` (`bench.sh` adds it to every run except `seq`) |
+
+`scripts/bench_torch.py` applies the same error bound to PyTorch's own
+output, against a float64 PyTorch result, unless `--no-check` is given.
 
 ### Unit tests (`make test`)
 
@@ -171,7 +221,7 @@ Every test runs on every implementation that is compiled in:
 | Name | Built in when | Requirement |
 |---|---|---|
 | `seq` | Always | Within the error bound |
-| `omp`, `omp_simd`, `omp_blocked` with `static`, `dynamic`, or `guided` and multiple thread counts | Corresponding `src/omp/conv2d_*.cpp` exists | Checked against the sequential and independent references |
+| `omp`, `omp_simd`, `omp_blocked`, each with `static`, `dynamic` and `guided` × 1, 2, 3 and the maximum number of threads (e.g. `omp/guided/t3`) | Corresponding `src/omp/conv2d_*.cpp` exists | Within the error bound **and** bit-identical to `seq`. Exception: built with FMA (e.g. `-march=native`), `omp_simd` and `omp_blocked` only need to meet the error bound |
 | `cuda/32x8` (the one-call `conv2d_cuda`), `cuda/8x8`, `16x16`, `32x32`, `64x4`, `64x16`, `128x1`, `256x4`, `1024x1`, `1x256`, `4x256`, `7x3`, `33x5` | `nvcc` is on the PATH (`make CUDA=0` to skip) | Within the error bound (FMA changes the rounding). Includes blocks wider than a warp (up to 1024×1) and taller than wide (1×256, 4×256); `7x3` and `33x5` leave partial blocks along every edge |
 | All seven variants (`cuda_opt`, `cuda_const`, `cuda_tiled_const`, `cuda_multiout`, `cuda_multiout_const`, `cuda_multiout_tiled`, `cuda_multiout_tiled_const`) with `32x8`, `64x4`, `128x8`, `256x1`, `1x128`, `7x3`, `33x5` | CUDA variants are compiled in | Within the error bound. The wide blocks also give the shared-tile variants wide tiles; `7x3` and `33x5` exercise partial blocks |
 
@@ -182,16 +232,19 @@ afterwards.
 
 | Group | Input | Expected output | Catches |
 |---|---|---|---|
-| identity | Center tap = 1, K = 1–7 | The input | Basic indexing |
-| shift | One tap = 1 at every filter position, non-square images | The input shifted, zeros filled in | Swapped rows/columns, off-by-one padding |
-| impulse | One pixel = 1, at the center and each corner | The filter rotated 180° | Convolution instead of cross-correlation, edge clipping |
-| ones | All-ones image and filter, including images smaller than the filter | Count of in-bounds taps | Zero-padding errors |
-| random | Uniform [−1, 1], 12 shapes (1×1, 1×17, 17×1, primes, 257×263, 1000×1000, …) × K = 1, 3, 5, 7 | Within the error bound of the double-precision loop | General arithmetic and indexing |
-| multi-channel exact (`seq` and all CUDA) | C = 2, 3, 5: a filter that is nonzero in one slice only; an impulse in one channel only; all ones | That input channel; that filter slice rotated 180°; C × the in-bounds tap count | Wrong input-channel offset, input channel paired with the wrong filter slice, channels skipped or repeated |
-| multi-channel random (`seq` and all CUDA) | Uniform [−1, 1], 6 shapes × C = 2, 3, 16 × K = 1, 3, 5, 7 | Within the error bound (with C·K² terms) of the double-precision loop | General multi-channel indexing |
-| multi-channel configurations (`seq` and all CUDA) | 1×1, 17×1, 33×65, 128×128 × (C, K) = (4, 9), (8, 11), (32, 11), (64, 7), (83, 7), (128, 5) | Within the error bound of the double-precision loop | Many channels, large filters, and C·K² = 4067, just under the constant-memory limit of 4096 |
-| multi-channel repeatability (`seq` and all CUDA) | 257×263, C = 8, K = 5, run 3 times | Identical bits every run | A missing barrier between channels in the shared-tile kernels |
+| identity | Center tap = 1; 1×1, 5×7, 33×65; K = 1, 3, 5, 7 | The input | Basic indexing |
+| shift | One tap = 1 at every filter position; 9×13 and 2×3; K = 3, 5, 7 | The input shifted, zeros filled in | Swapped rows/columns, off-by-one padding |
+| impulse | One pixel = 1, at the center and each corner; 15×11 and 4×6; K = 3, 5, 7 | The filter rotated 180° | Convolution instead of cross-correlation, edge clipping |
+| ones | All-ones image and filter; 1×1 to 33×65, including images smaller than the filter; K = 1, 3, 5, 7 | Count of in-bounds taps | Zero-padding errors |
+| random | Uniform [−1, 1], 12 shapes (1×1, 1×17, 17×1, 2×2, 3×3, 5×7, 7×5, 31×33, 33×65, 64×64, 257×263, 1000×1000) × K = 1, 3, 5, 7 | Within the error bound of the double-precision loop | General arithmetic and indexing |
+| multi-channel exact | 9×13, 4×6, 1×1; C = 2, 3, 5; K = 1, 3, 5: a filter that is nonzero in one slice only; an impulse in one channel only; all ones | That input channel; that filter slice rotated 180°; C × the in-bounds tap count | Wrong input-channel offset, input channel paired with the wrong filter slice, channels skipped or repeated |
+| multi-channel random | Uniform [−1, 1], 6 shapes (1×1 to 257×263) × C = 2, 3, 16 × K = 1, 3, 5, 7 | Within the error bound (with C·K² terms) of the double-precision loop | General multi-channel indexing |
+| multi-channel configurations | 1×1, 17×1, 33×65, 128×128 × (C, K) = (4, 9), (8, 11), (32, 11), (64, 7), (83, 7), (128, 5) | Within the error bound of the double-precision loop | Many channels, large filters, and C·K² = 4067, just under the constant-memory limit of 4096 |
+| multi-channel repeatability | 257×263, C = 8, K = 5, run 3 times | Identical bits every run | A missing barrier between channels in the shared-tile kernels |
 | repeatability | 513×517, K = 7, run 3 times | Identical bits every run | Data races, reads of uninitialized memory |
+
+Every group runs on every implementation listed above, including all
+OpenMP schedules and thread counts and all CUDA block shapes.
 
 The hand-derived cases use only small integers and products with 0 or 1, so
 any implementation must reproduce them exactly whatever the summation order.
@@ -239,8 +292,8 @@ multi-channel shapes: `1024x768x5x3`, `257x263x7x16`, `300x200x11x8` and
 `128x128x7x64`. Multi-channel dump files are prefixed `{H}x{W}_k{K}_c{C}_`.
 Single-channel dumps keep the `{H}x{W}_k{K}_` prefix.
 
-To validate all five CUDA variants, set
-`VALIDATE_IMPLS="seq cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout"`
+To validate all eight CUDA implementations, set
+`VALIDATE_IMPLS="seq cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const"`
 on a GPU compute node. Use a dedicated `VALIDATE_DIR`: the target deletes
 existing `.bin` files in that directory before writing new dumps.
 
@@ -267,7 +320,16 @@ status: 0 if all pass, 1 if any fail, 2 for missing or malformed files.
   not tested with one.
 - **No CI.** `make test` only runs when someone runs it, and with the default
   `VALIDATE=auto` it skips the external check if neither SciPy nor PyTorch
-  is available alongside NumPy.
+  is available alongside NumPy. This happened in the OpenMP rerun
+  (`results/slurm-128679.out`): the unit tests passed, but the external
+  check was skipped.
+- **Placeholder names in `bench.sh`.** Its default `IMPLS` also lists
+  `cuda_tiled` and `cuda_tiled_mo`, names reserved before the variants were
+  written. No implementation has those names (the shared-tile kernels are
+  `cuda_opt` and `cuda_multiout_tiled`), so `bench.sh` finds that the driver
+  rejects them and skips them.
+- **`scripts/conv_test.py` is not a test.** It prints a few `cuda` and
+  `cuda_opt` rows from an old benchmark CSV at a hard-coded path.
 
 ## Benchmarks
 
@@ -281,8 +343,18 @@ scripts/bench.sh --quick                 # reduced sweep of every experiment
 scripts/bench.sh -o results/final all    # full sweep -> results/final/*.csv
 python3 scripts/plot.py results/final    # -> plots/final/*.png + summary.md
 sbatch scripts/euler.slurm               # build, test, sweep and plot on one cluster node
+sbatch scripts/euler_omp.slurm           # rerun only the OpenMP versions and merge into an earlier run
 sbatch scripts/cuda_variants.slurm       # test CPU/CUDA variants and run selected sweeps
 ```
+
+**Results to use for the report:** `results/euler-127842+omp-128679/`, with
+figures and `summary.md` in `plots/euler-127842+omp-128679/`. It is the full
+run `euler-127842` (every experiment, including multi-channel input) with its
+OpenMP rows replaced by the OpenMP-only rerun `euler-128679-omp`; see
+`MERGED.txt` there. Both runs were on `euler01` with 16 CPUs.
+`results/euler-127786/` is an earlier run with no multi-channel results;
+it is kept for reference and shouldn't be used. See
+[BENCHMARK.md](BENCHMARK.md#results-in-the-repository).
 
 Check the partition, resources, and time limit in each Slurm script before
 submission. `cuda_variants.slurm` builds and tests the variants, then runs
@@ -297,7 +369,7 @@ What is benchmarked:
 | `omp` | OpenMP × 1, 2, 4, … cores threads × `static` / `dynamic` / `guided`, at 64², 512², 2048² | thread scaling and scheduling policy, including a small image |
 | `cuda_blocks` | CUDA × 26 thread-block shapes: warp-wide rows, squares, rows wider than 32 (64×4 to 1024×1), columns taller than 32 (1×128 to 1×512, 4×64 to 16×64) | effect of block shape and memory coalescing |
 | `torch` | PyTorch `conv2d` on the GPU when available and on the CPU, same problems as `baseline` | an external reference point; GPU execution can use cuDNN |
-| `channels` | `seq` and every CUDA implementation × C = 1, 3, 8, 16, 32, 64 × 256², 512², 1024² × K = 3, 5, 7; PyTorch on the same problems | multi-channel input: time, speedup, and copy share as C grows; cuDNN on the input it's designed for |
+| `channels` | `seq`, the OpenMP versions (all cores, static) and every CUDA implementation (32×8 block) × C = 1, 3, 8, 16, 32, 64 × 256², 512², 1024² × K = 3, 5, 7; PyTorch on the same problems | multi-channel input: time, speedup, and copy share as C grows; cuDNN on the input it's designed for |
 | `channel_blocks` | CUDA × the 26 block shapes at C = 16, 1024², K = 3, 7 | block shape with multi-channel input |
 
 Block shapes a kernel can't run (for example a shared-memory tile too large
@@ -358,8 +430,11 @@ contain separate kernel timings.
 
 ## Status
 
-- [x] Sequential baseline
-- [x] OpenMP
-- [x] CUDA variants
-- [x] Benchmark and plotting scripts
+- [x] Sequential baseline (`seq`)
+- [x] OpenMP (`omp`, `omp_simd`, `omp_blocked`)
+- [x] CUDA (`cuda` and seven variants)
+- [x] Multi-channel input in every implementation
+- [x] Correctness tests and external validation
+- [x] Benchmark and plotting scripts; full Euler run (`euler-127842+omp-128679`)
+- [ ] Multiple output channels
 - [ ] Report
