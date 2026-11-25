@@ -29,7 +29,7 @@ __global__ void conv2d_kernel(const float *in, float *out, const float *k,
     const int r = blockIdx.y * blockDim.y + threadIdx.y;
     const int c = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Filter rows that land inside the image for this output row.
+    // Filter rows and columns that land inside the image for this output pixel.
     // Clipping the loop bounds is equivalent to zero padding but keeps
     // the bounds check out of the inner loop. Every channel has the same
     // H x W shape, so the bounds don't depend on the channel.
