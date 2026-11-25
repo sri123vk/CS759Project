@@ -5,9 +5,9 @@ NVCC      ?= nvcc
 NVCCFLAGS ?= -O3 -std=c++17 -Xcompiler -Wall,-Wextra
 
 BIN := bin
-CPU_SRCS := src/main.cpp src/seq/conv2d_seq.cpp
-TEST_SRCS := tests/test_conv.cpp src/seq/conv2d_seq.cpp
-HEADERS := include/conv2d.h include/utils.h
+CPU_SRCS := src/main.cpp src/seq/conv2d_seq.cpp src/dispatch.cpp
+TEST_SRCS := tests/test_conv.cpp src/seq/conv2d_seq.cpp src/dispatch.cpp
+HEADERS := include/conv2d.h include/utils.h include/dispatch.h include/dispatch_model.h
 
 # OpenMP variants: omp, omp_simd, omp_blocked, omp_tiled
 OMP_VARIANTS := omp omp_simd omp_blocked omp_tiled

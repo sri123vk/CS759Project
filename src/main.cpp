@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "conv2d.h"
+#include "dispatch.h"
 #include "utils.h"
 
 namespace {
@@ -56,6 +57,7 @@ void usage(const char* prog) {
         "          CPU:  seq omp omp_simd omp_blocked omp_tiled\n"
         "          CUDA: cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout\n"
         "                cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const\n"
+        "          auto: the one the cost model predicts is fastest (src/dispatch.cpp)\n"
         "          --C c: input channels, summed into one output (all implementations)\n"
         "          [--iters n] [--warmup n] [--block bx by|auto]\n"
         "          [--check] [--dump dir] [--header]\n",
@@ -315,6 +317,13 @@ std::string field(double v) {
 }  // namespace
 int main(int argc, char** argv) {
     Args a = parse(argc, argv);
+    // --impl auto: replaced by the dispatcher's choice before anything runs,
+    // so the run (and its CSV row) is exactly that implementation's.
+    if (a.impl == "auto") {
+        const DispatchChoice c = conv2d_choose(a.C, a.H, a.W, a.K);
+        std::fprintf(stderr, "auto: %s (predicted %.4f ms)\n", c.impl.c_str(), c.predicted_ms);
+        a.impl = c.impl;
+    }
     const bool cuda = (a.impl == "cuda");
     const bool cuda_variant = is_cuda_variant(a.impl);
     const size_t n = (size_t)a.H * a.W;

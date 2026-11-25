@@ -16,6 +16,8 @@
 //   cuda_opt, cuda_const, cuda_tiled_const, cuda_multiout and the multiout
 //   combinations /<bx>x<by>
 //                                         when built with -DCONV_HAVE_CUDA_VARIANTS
+//   auto, auto/cpu, auto/gpu              the dispatcher (src/dispatch.cpp);
+//                                         auto/gpu only in CUDA builds
 //
 // Most tests use one input channel. The multi-channel tests (C > 1) run only
 // on implementations marked `multichannel` in all_impls(), which is currently
@@ -26,6 +28,7 @@
 #include <algorithm>
 #include <cstdarg>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <exception>
@@ -35,6 +38,7 @@
 #include <vector>
 
 #include "conv2d.h"
+#include "dispatch.h"
 #include "utils.h"
 
 #if defined(CONV_HAVE_OMP) || defined(CONV_HAVE_OMP_SIMD) || defined(CONV_HAVE_OMP_BLOCKED) || \
@@ -181,6 +185,15 @@ std::vector<Impl> all_impls() {
                 [] {}, false, true});
         }
     }
+#endif
+
+    // The dispatcher runs whichever implementation it picks for each shape;
+    // the picked one must meet the same checks. auto/cpu and auto/gpu
+    // restrict it to one side, so both of its code paths get exercised.
+    v.push_back({"auto", conv2d_auto, [] { unsetenv("CONV_AUTO_DEVICE"); }, false, true});
+    v.push_back({"auto/cpu", conv2d_auto, [] { setenv("CONV_AUTO_DEVICE", "cpu", 1); }, false, true});
+#if defined(CONV_HAVE_CUDA) && defined(CONV_HAVE_CUDA_VARIANTS)
+    v.push_back({"auto/gpu", conv2d_auto, [] { setenv("CONV_AUTO_DEVICE", "gpu", 1); }, false, true});
 #endif
 
     return v;

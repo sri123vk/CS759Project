@@ -109,8 +109,7 @@ in flags. On Euler, load an appropriate CUDA module before building and run
 CUDA tests and benchmarks on a GPU compute node.
 
 Options: `--size N` (or `--H`, `--W`), `--K`, `--C` (input channels,
-default 1; values above 1 are accepted by `seq` and every CUDA implementation,
-not the OpenMP versions), `--iters`, `--warmup`,
+default 1; values above 1 are accepted by every implementation), `--iters`, `--warmup`,
 `--block BX BY` (CUDA thread block, default 32 8), `--block auto`, `--check`, `--dump DIR`,
 `--header`. Output is one CSV row per run with columns
 `impl,H,W,K,C,bx,by,iters,median_ms,min_ms,h2d_ms,kernel_ms,d2h_ms,alloc_ms,max_abs_err,max_rel_err,err_ratio,nonfinite,pass`;
@@ -129,6 +128,35 @@ CUDA implementations available through `--impl`:
 | `cuda_const` | Direct kernel with filter coefficients in constant memory. |
 | `cuda_tiled_const` | Shared-memory input tiles and a constant-memory filter. |
 | `cuda_multiout` | Two outputs per thread with a global-memory filter. |
+
+The OpenMP versions are `omp`, `omp_simd`, `omp_blocked` and `omp_tiled`
+(tiles of 4 output rows × 16 columns whose running sums stay in registers
+across all channels and filter taps).
+
+### Dispatcher (`--impl auto`)
+
+`--impl auto` runs the implementation predicted to be fastest for the
+problem (C, H, W, K) among those compiled in; the choice is printed on
+stderr, and the CSV row is that implementation's. The prediction is a cost
+model per implementation,
+
+```
+t_ms = c0 + c1*H*W*C + c2*H*W + c3*H*W*C*K^2
+```
+
+(fixed cost per call, per input element, per output element, per
+multiply-add), fitted to an Euler run by `scripts/fit_dispatch.py`, which
+writes the coefficients to `include/dispatch_model.h` and a report of how
+often the model picks the fastest implementation. Refit after a new run:
+
+```
+python3 scripts/fit_dispatch.py results/<run> --report results/<run>/dispatch.md
+```
+
+The model is for the node type it was measured on (16 OpenMP threads, one
+RTX 4000 Ada). `CONV_AUTO_DEVICE=cpu` or `=gpu` restricts the choice to one
+side. From C++, `conv2d_auto()` in `include/dispatch.h` has the same
+interface as `conv2d_seq`.
 
 ## Tests
 
@@ -171,8 +199,9 @@ Every test runs on every implementation that is compiled in:
 | Name | Built in when | Requirement |
 |---|---|---|
 | `seq` | Always | Within the error bound |
-| `omp`, `omp_simd`, `omp_blocked` with `static`, `dynamic`, or `guided` and multiple thread counts | Corresponding `src/omp/conv2d_*.cpp` exists | Checked against the sequential and independent references |
+| `omp`, `omp_simd`, `omp_blocked`, `omp_tiled` with `static`, `dynamic`, or `guided` and multiple thread counts | Corresponding `src/omp/conv2d_*.cpp` exists | Checked against the sequential and independent references |
 | `cuda/32x8` (the one-call `conv2d_cuda`), `cuda/8x8`, `16x16`, `32x32`, `64x4`, `64x16`, `128x1`, `256x4`, `1024x1`, `1x256`, `4x256`, `7x3`, `33x5` | `nvcc` is on the PATH (`make CUDA=0` to skip) | Within the error bound (FMA changes the rounding). Includes blocks wider than a warp (up to 1024×1) and taller than wide (1×256, 4×256); `7x3` and `33x5` leave partial blocks along every edge |
+| `auto`, `auto/cpu` and, with CUDA, `auto/gpu` (the dispatcher, free to pick, or restricted to one side) | Always | Whatever it picks must pass the same checks |
 | All seven variants (`cuda_opt`, `cuda_const`, `cuda_tiled_const`, `cuda_multiout`, `cuda_multiout_const`, `cuda_multiout_tiled`, `cuda_multiout_tiled_const`) with `32x8`, `64x4`, `128x8`, `256x1`, `1x128`, `7x3`, `33x5` | CUDA variants are compiled in | Within the error bound. The wide blocks also give the shared-tile variants wide tiles; `7x3` and `33x5` exercise partial blocks |
 
 The tests also check for some memory errors. The output buffer starts as NaN,
