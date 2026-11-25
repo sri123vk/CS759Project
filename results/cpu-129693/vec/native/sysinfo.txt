@@ -1,0 +1,39 @@
+# conv2d benchmark system info
+date:     2026-11-24T19:47:12-06:00
+host:     euler01.engr.wisc.edu
+git:      026c104
+branch:   omp-tiled-multichannel
+slurm:    job 129693 on euler01, cpus-per-task=16
+
+## build
+CXX       ?= g++
+CXXFLAGS  ?= -O3 -std=c++17 -Wall -Wextra
+NVCC      ?= nvcc
+NVCCFLAGS ?= -O3 -std=c++17 -Xcompiler -Wall,-Wextra
+CXXFLAGS/NVCCFLAGS overrides from the environment: -O3 -std=c++17 -Wall -Wextra -march=native / none
+g++ (GCC) 14.3.1 20251022 (Red Hat 14.3.1-4)
+
+## cpu
+CPU(s):                                  96
+Model name:                              AMD EPYC 9254 24-Core Processor
+Thread(s) per core:                      2
+Core(s) per socket:                      24
+Socket(s):                               2
+CPU(s) scaling MHz:                      84%
+CPU max MHz:                             4153.1890
+L1d cache:                               1.5 MiB (48 instances)
+L2 cache:                                48 MiB (48 instances)
+L3 cache:                                256 MiB (8 instances)
+NUMA node(s):                            2
+simd: avx avx2 avx512f fma 
+nproc: 16
+OMP_NUM_THREADS= OMP_PROC_BIND=close OMP_PLACES=cores
+               total        used        free      shared  buff/cache   available
+Mem:             251          14         199           0          39         237
+
+## gpu
+No devices were found
+
+## python
+python 3.12.15
+torch not installed

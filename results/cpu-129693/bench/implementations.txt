@@ -1,0 +1,1 @@
+implementations: seq omp omp_simd omp_blocked omp_tiled

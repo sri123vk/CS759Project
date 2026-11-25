@@ -1,0 +1,723 @@
+g++ (GCC) 14.3.1 20251022 (Red Hat 14.3.1-4)
+== build sse2: -O3 -std=c++17 -Wall -Wextra -march=x86-64
+   unit tests: ALL PASSED
+== build avx2: -O3 -std=c++17 -Wall -Wextra -march=x86-64-v3
+   unit tests: ALL PASSED
+== build native: -O3 -std=c++17 -Wall -Wextra -march=native
+   unit tests: ALL PASSED
+== benchmark sse2
+implementations: seq omp omp_simd omp_blocked omp_tiled
+results -> /srv/home/ravisankar2/conv-final/results/cpu-129693/vec/sse2
+== omp
+  --impl seq --size 512 --K 3 --iters 50 t=1                     2.7562 ms
+  --impl omp --size 512 --K 3 --iters 50 t=1 static              2.6896 ms
+  --impl omp --size 512 --K 3 --iters 50 t=16 static             0.3551 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=1 static         0.2094 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=16 static        0.0294 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=1 static      0.4433 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=16 static     0.0529 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=1 static        0.2838 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=16 static       0.0402 ms
+  --impl seq --size 512 --K 5 --iters 50 t=1                     4.0439 ms
+  --impl omp --size 512 --K 5 --iters 50 t=1 static              4.0405 ms
+  --impl omp --size 512 --K 5 --iters 50 t=16 static             0.5418 ms
+  --impl omp_simd --size 512 --K 5 --iters 50 t=1 static         0.5566 ms
+  --impl omp_simd --size 512 --K 5 --iters 50 t=16 static        0.0722 ms
+  --impl omp_blocked --size 512 --K 5 --iters 50 t=1 static      0.8360 ms
+  --impl omp_blocked --size 512 --K 5 --iters 50 t=16 static     0.0926 ms
+  --impl omp_tiled --size 512 --K 5 --iters 50 t=1 static        0.5339 ms
+  --impl omp_tiled --size 512 --K 5 --iters 50 t=16 static       0.0712 ms
+  --impl seq --size 512 --K 7 --iters 50 t=1                     8.0609 ms
+  --impl omp --size 512 --K 7 --iters 50 t=1 static              7.8935 ms
+  --impl omp --size 512 --K 7 --iters 50 t=16 static             0.9897 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=1 static         1.1042 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=16 static        0.1385 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=1 static      1.4868 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=16 static     0.1767 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=1 static        0.9447 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=16 static       0.1168 ms
+  --impl seq --size 1024 --K 3 --iters 20 t=1                   11.0961 ms
+  --impl omp --size 1024 --K 3 --iters 20 t=1 static            10.7536 ms
+  --impl omp --size 1024 --K 3 --iters 20 t=16 static            1.4441 ms
+  --impl omp_simd --size 1024 --K 3 --iters 20 t=1 static        0.8533 ms
+  --impl omp_simd --size 1024 --K 3 --iters 20 t=16 static       0.1081 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 20 t=1 static     1.5046 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 20 t=16 static     0.1652 ms
+  --impl omp_tiled --size 1024 --K 3 --iters 20 t=1 static       1.1059 ms
+  --impl omp_tiled --size 1024 --K 3 --iters 20 t=16 static      0.1326 ms
+  --impl seq --size 1024 --K 5 --iters 20 t=1                   16.2372 ms
+  --impl omp --size 1024 --K 5 --iters 20 t=1 static            16.1497 ms
+  --impl omp --size 1024 --K 5 --iters 20 t=16 static            2.1756 ms
+  --impl omp_simd --size 1024 --K 5 --iters 20 t=1 static        2.2396 ms
+  --impl omp_simd --size 1024 --K 5 --iters 20 t=16 static       0.2886 ms
+  --impl omp_blocked --size 1024 --K 5 --iters 20 t=1 static     2.8979 ms
+  --impl omp_blocked --size 1024 --K 5 --iters 20 t=16 static     0.3322 ms
+  --impl omp_tiled --size 1024 --K 5 --iters 20 t=1 static       1.9563 ms
+  --impl omp_tiled --size 1024 --K 5 --iters 20 t=16 static      0.2368 ms
+  --impl seq --size 1024 --K 7 --iters 20 t=1                   32.5966 ms
+  --impl omp --size 1024 --K 7 --iters 20 t=1 static            32.0748 ms
+  --impl omp --size 1024 --K 7 --iters 20 t=16 static            4.0394 ms
+  --impl omp_simd --size 1024 --K 7 --iters 20 t=1 static        4.4601 ms
+  --impl omp_simd --size 1024 --K 7 --iters 20 t=16 static       0.5937 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 20 t=1 static     5.1885 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 20 t=16 static     0.6062 ms
+  --impl omp_tiled --size 1024 --K 7 --iters 20 t=1 static       3.3485 ms
+  --impl omp_tiled --size 1024 --K 7 --iters 20 t=16 static      0.4306 ms
+  --impl seq --size 2048 --K 3 --iters 10 t=1                   44.1623 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=1 static            43.3274 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=16 static            5.7608 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=1 static        3.8157 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=16 static       0.4831 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=1 static     5.5223 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=16 static     0.5857 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=1 static       4.1418 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=16 static      0.4555 ms
+  --impl seq --size 2048 --K 5 --iters 10 t=1                   64.7652 ms
+  --impl omp --size 2048 --K 5 --iters 10 t=1 static            64.3715 ms
+  --impl omp --size 2048 --K 5 --iters 10 t=16 static            8.7854 ms
+  --impl omp_simd --size 2048 --K 5 --iters 10 t=1 static        9.1755 ms
+  --impl omp_simd --size 2048 --K 5 --iters 10 t=16 static       1.3583 ms
+  --impl omp_blocked --size 2048 --K 5 --iters 10 t=1 static    10.5965 ms
+  --impl omp_blocked --size 2048 --K 5 --iters 10 t=16 static     1.1741 ms
+  --impl omp_tiled --size 2048 --K 5 --iters 10 t=1 static       7.3953 ms
+  --impl omp_tiled --size 2048 --K 5 --iters 10 t=16 static      0.8792 ms
+  --impl seq --size 2048 --K 7 --iters 10 t=1                  130.5270 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=1 static           128.7811 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=16 static           16.4428 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=1 static       17.8257 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=16 static       2.7620 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=1 static    18.8908 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=16 static     2.3196 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=1 static      12.7267 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=16 static      1.6641 ms
+   (20 s)
+done: 81 ok, 0 check failures, 0 errors, 0 unsupported configurations skipped -> /srv/home/ravisankar2/conv-final/results/cpu-129693/vec/sse2
+== benchmark avx2
+implementations: seq omp omp_simd omp_blocked omp_tiled
+results -> /srv/home/ravisankar2/conv-final/results/cpu-129693/vec/avx2
+== omp
+  --impl seq --size 512 --K 3 --iters 50 t=1                     2.8199 ms
+  --impl omp --size 512 --K 3 --iters 50 t=1 static              2.8403 ms
+  --impl omp --size 512 --K 3 --iters 50 t=16 static             0.3660 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=1 static         0.1477 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=16 static        0.0219 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=1 static      0.3462 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=16 static     0.0452 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=1 static        0.2123 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=16 static       0.0287 ms
+  --impl seq --size 512 --K 5 --iters 50 t=1                     4.1925 ms
+  --impl omp --size 512 --K 5 --iters 50 t=1 static              4.3801 ms
+  --impl omp --size 512 --K 5 --iters 50 t=16 static             0.5669 ms
+  --impl omp_simd --size 512 --K 5 --iters 50 t=1 static         0.3925 ms
+  --impl omp_simd --size 512 --K 5 --iters 50 t=16 static        0.0510 ms
+  --impl omp_blocked --size 512 --K 5 --iters 50 t=1 static      0.6803 ms
+  --impl omp_blocked --size 512 --K 5 --iters 50 t=16 static     0.0780 ms
+  --impl omp_tiled --size 512 --K 5 --iters 50 t=1 static        0.3656 ms
+  --impl omp_tiled --size 512 --K 5 --iters 50 t=16 static       0.0474 ms
+  --impl seq --size 512 --K 7 --iters 50 t=1                     8.7142 ms
+  --impl omp --size 512 --K 7 --iters 50 t=1 static              8.8474 ms
+  --impl omp --size 512 --K 7 --iters 50 t=16 static             1.0040 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=1 static         0.7521 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=16 static        0.0971 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=1 static      1.4511 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=16 static     0.1387 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=1 static        0.6599 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=16 static       0.0797 ms
+  --impl seq --size 1024 --K 3 --iters 20 t=1                   11.2742 ms
+  --impl omp --size 1024 --K 3 --iters 20 t=1 static            11.2932 ms
+  --impl omp --size 1024 --K 3 --iters 20 t=16 static            1.5785 ms
+  --impl omp_simd --size 1024 --K 3 --iters 20 t=1 static        0.6230 ms
+  --impl omp_simd --size 1024 --K 3 --iters 20 t=16 static       0.0774 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 20 t=1 static     1.0658 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 20 t=16 static     0.1320 ms
+  --impl omp_tiled --size 1024 --K 3 --iters 20 t=1 static       0.8499 ms
+  --impl omp_tiled --size 1024 --K 3 --iters 20 t=16 static      0.1004 ms
+  --impl seq --size 1024 --K 5 --iters 20 t=1                   16.8197 ms
+  --impl omp --size 1024 --K 5 --iters 20 t=1 static            17.4626 ms
+  --impl omp --size 1024 --K 5 --iters 20 t=16 static            2.2566 ms
+  --impl omp_simd --size 1024 --K 5 --iters 20 t=1 static        1.5765 ms
+  --impl omp_simd --size 1024 --K 5 --iters 20 t=16 static       0.1936 ms
+  --impl omp_blocked --size 1024 --K 5 --iters 20 t=1 static     2.2122 ms
+  --impl omp_blocked --size 1024 --K 5 --iters 20 t=16 static     0.2605 ms
+  --impl omp_tiled --size 1024 --K 5 --iters 20 t=1 static       1.3591 ms
+  --impl omp_tiled --size 1024 --K 5 --iters 20 t=16 static      0.1664 ms
+  --impl seq --size 1024 --K 7 --iters 20 t=1                   35.1874 ms
+  --impl omp --size 1024 --K 7 --iters 20 t=1 static            35.8341 ms
+  --impl omp --size 1024 --K 7 --iters 20 t=16 static            4.1777 ms
+  --impl omp_simd --size 1024 --K 7 --iters 20 t=1 static        2.9953 ms
+  --impl omp_simd --size 1024 --K 7 --iters 20 t=16 static       0.3829 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 20 t=1 static     4.6910 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 20 t=16 static     0.4655 ms
+  --impl omp_tiled --size 1024 --K 7 --iters 20 t=1 static       2.1989 ms
+  --impl omp_tiled --size 1024 --K 7 --iters 20 t=16 static      0.2646 ms
+  --impl seq --size 2048 --K 3 --iters 10 t=1                   45.1940 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=1 static            45.3674 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=16 static            6.1757 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=1 static        2.7358 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=16 static       0.3453 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=1 static     3.6283 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=16 static     0.4205 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=1 static       3.0851 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=16 static      0.3255 ms
+  --impl seq --size 2048 --K 5 --iters 10 t=1                   67.0319 ms
+  --impl omp --size 2048 --K 5 --iters 10 t=1 static            69.5039 ms
+  --impl omp --size 2048 --K 5 --iters 10 t=16 static            8.9675 ms
+  --impl omp_simd --size 2048 --K 5 --iters 10 t=1 static        6.4999 ms
+  --impl omp_simd --size 2048 --K 5 --iters 10 t=16 static       0.9037 ms
+  --impl omp_blocked --size 2048 --K 5 --iters 10 t=1 static     7.7447 ms
+  --impl omp_blocked --size 2048 --K 5 --iters 10 t=16 static     0.9476 ms
+  --impl omp_tiled --size 2048 --K 5 --iters 10 t=1 static       4.8644 ms
+  --impl omp_tiled --size 2048 --K 5 --iters 10 t=16 static      0.5552 ms
+  --impl seq --size 2048 --K 7 --iters 10 t=1                  141.1027 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=1 static           143.9154 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=16 static           16.7369 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=1 static       12.0189 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=16 static       1.8467 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=1 static    17.2600 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=16 static     1.8438 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=1 static       7.7927 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=16 static      0.9687 ms
+   (21 s)
+done: 81 ok, 0 check failures, 0 errors, 0 unsupported configurations skipped -> /srv/home/ravisankar2/conv-final/results/cpu-129693/vec/avx2
+== benchmark native
+implementations: seq omp omp_simd omp_blocked omp_tiled
+results -> /srv/home/ravisankar2/conv-final/results/cpu-129693/vec/native
+== omp
+  --impl seq --size 512 --K 3 --iters 50 t=1                     2.9465 ms
+  --impl omp --size 512 --K 3 --iters 50 t=1 static              2.9099 ms
+  --impl omp --size 512 --K 3 --iters 50 t=16 static             0.4041 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=1 static         0.1692 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=16 static        0.0251 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=1 static      0.3594 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=16 static     0.0456 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=1 static        0.1970 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=16 static       0.0295 ms
+  --impl seq --size 512 --K 5 --iters 50 t=1                     5.9830 ms
+  --impl omp --size 512 --K 5 --iters 50 t=1 static              6.0345 ms
+  --impl omp --size 512 --K 5 --iters 50 t=16 static             0.7977 ms
+  --impl omp_simd --size 512 --K 5 --iters 50 t=1 static         0.4410 ms
+  --impl omp_simd --size 512 --K 5 --iters 50 t=16 static        0.0578 ms
+  --impl omp_blocked --size 512 --K 5 --iters 50 t=1 static      0.8756 ms
+  --impl omp_blocked --size 512 --K 5 --iters 50 t=16 static     0.0908 ms
+  --impl omp_tiled --size 512 --K 5 --iters 50 t=1 static        0.3979 ms
+  --impl omp_tiled --size 512 --K 5 --iters 50 t=16 static       0.0534 ms
+  --impl seq --size 512 --K 7 --iters 50 t=1                    11.0123 ms
+  --impl omp --size 512 --K 7 --iters 50 t=1 static             11.3788 ms
+  --impl omp --size 512 --K 7 --iters 50 t=16 static             1.3555 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=1 static         0.8479 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=16 static        0.1071 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=1 static      1.7899 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=16 static     0.1674 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=1 static        0.7340 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=16 static       0.0902 ms
+  --impl seq --size 1024 --K 3 --iters 20 t=1                   11.6732 ms
+  --impl omp --size 1024 --K 3 --iters 20 t=1 static            11.6298 ms
+  --impl omp --size 1024 --K 3 --iters 20 t=16 static            1.5592 ms
+  --impl omp_simd --size 1024 --K 3 --iters 20 t=1 static        0.6643 ms
+  --impl omp_simd --size 1024 --K 3 --iters 20 t=16 static       0.0845 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 20 t=1 static     1.1016 ms
+  --impl omp_blocked --size 1024 --K 3 --iters 20 t=16 static     0.1284 ms
+  --impl omp_tiled --size 1024 --K 3 --iters 20 t=1 static       0.8286 ms
+  --impl omp_tiled --size 1024 --K 3 --iters 20 t=16 static      0.1176 ms
+  --impl seq --size 1024 --K 5 --iters 20 t=1                   24.0111 ms
+  --impl omp --size 1024 --K 5 --iters 20 t=1 static            24.6232 ms
+  --impl omp --size 1024 --K 5 --iters 20 t=16 static            3.2479 ms
+  --impl omp_simd --size 1024 --K 5 --iters 20 t=1 static        1.7267 ms
+  --impl omp_simd --size 1024 --K 5 --iters 20 t=16 static       0.2152 ms
+  --impl omp_blocked --size 1024 --K 5 --iters 20 t=1 static     2.7648 ms
+  --impl omp_blocked --size 1024 --K 5 --iters 20 t=16 static     0.2839 ms
+  --impl omp_tiled --size 1024 --K 5 --iters 20 t=1 static       1.5055 ms
+  --impl omp_tiled --size 1024 --K 5 --iters 20 t=16 static      0.1928 ms
+  --impl seq --size 1024 --K 7 --iters 20 t=1                   44.8152 ms
+  --impl omp --size 1024 --K 7 --iters 20 t=1 static            45.7009 ms
+  --impl omp --size 1024 --K 7 --iters 20 t=16 static            5.5606 ms
+  --impl omp_simd --size 1024 --K 7 --iters 20 t=1 static        3.2455 ms
+  --impl omp_simd --size 1024 --K 7 --iters 20 t=16 static       0.4040 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 20 t=1 static     5.8300 ms
+  --impl omp_blocked --size 1024 --K 7 --iters 20 t=16 static     0.5068 ms
+  --impl omp_tiled --size 1024 --K 7 --iters 20 t=1 static       2.4478 ms
+  --impl omp_tiled --size 1024 --K 7 --iters 20 t=16 static      0.3131 ms
+  --impl seq --size 2048 --K 3 --iters 10 t=1                   46.9554 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=1 static            46.6521 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=16 static            6.3378 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=1 static        2.9970 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=16 static       0.3502 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=1 static     3.7942 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=16 static     0.4033 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=1 static       2.7958 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=16 static      0.3461 ms
+  --impl seq --size 2048 --K 5 --iters 10 t=1                   95.4853 ms
+  --impl omp --size 2048 --K 5 --iters 10 t=1 static            97.6137 ms
+  --impl omp --size 2048 --K 5 --iters 10 t=16 static           12.8557 ms
+  --impl omp_simd --size 2048 --K 5 --iters 10 t=1 static        7.1235 ms
+  --impl omp_simd --size 2048 --K 5 --iters 10 t=16 static       0.9296 ms
+  --impl omp_blocked --size 2048 --K 5 --iters 10 t=1 static     9.6972 ms
+  --impl omp_blocked --size 2048 --K 5 --iters 10 t=16 static     0.9541 ms
+  --impl omp_tiled --size 2048 --K 5 --iters 10 t=1 static       5.3153 ms
+  --impl omp_tiled --size 2048 --K 5 --iters 10 t=16 static      0.6376 ms
+  --impl seq --size 2048 --K 7 --iters 10 t=1                  178.4973 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=1 static           183.6218 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=16 static           22.2581 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=1 static       13.2525 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=16 static       1.7584 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=1 static    21.1005 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=16 static     1.7598 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=1 static       8.5006 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=16 static      1.1192 ms
+   (24 s)
+done: 81 ok, 0 check failures, 0 errors, 0 unsupported configurations skipped -> /srv/home/ravisankar2/conv-final/results/cpu-129693/vec/native
+done -> /srv/home/ravisankar2/conv-final/results/cpu-129693/vec   (next: python3 scripts/plot_vec.py /srv/home/ravisankar2/conv-final/results/cpu-129693/vec)
+rm -rf bin
+mkdir -p bin
+g++ -Iinclude -O3 -std=c++17 -Wall -Wextra -fopenmp -DCONV_HAVE_OMP -DCONV_HAVE_OMP_SIMD -DCONV_HAVE_OMP_BLOCKED -DCONV_HAVE_OMP_TILED  src/main.cpp src/seq/conv2d_seq.cpp src/dispatch.cpp src/omp/conv2d_omp.cpp src/omp/conv2d_omp_simd.cpp src/omp/conv2d_omp_blocked.cpp src/omp/conv2d_omp_tiled.cpp   -o bin/conv
+g++ -Iinclude -O3 -std=c++17 -Wall -Wextra -fopenmp -DCONV_HAVE_OMP -DCONV_HAVE_OMP_SIMD -DCONV_HAVE_OMP_BLOCKED -DCONV_HAVE_OMP_TILED  tests/test_conv.cpp src/seq/conv2d_seq.cpp src/dispatch.cpp src/omp/conv2d_omp.cpp src/omp/conv2d_omp_simd.cpp src/omp/conv2d_omp_blocked.cpp src/omp/conv2d_omp_tiled.cpp   -o bin/test_conv
+./bin/test_conv
+== identity kernel: output == input
+== single-tap kernel: shifted input with zero fill
+== impulse image: output is the filter rotated 180 degrees
+== all-ones image and filter: in-bounds tap counts
+== random data: within FP32 error bound of double reference
+== multi-channel: channel selection, impulse, all-ones
+== multi-channel random data: within FP32 error bound of double reference
+== multi-channel configurations: many channels, large filters
+== multi-channel repeatability: identical bits across 3 runs
+== repeatability: identical bits across 3 runs
+
+implementation             checks   failed
+seq                           589        0
+omp/static/t1                 589        0
+omp/static/t2                 589        0
+omp/static/t3                 589        0
+omp/static/t16                589        0
+omp/dynamic/t1                589        0
+omp/dynamic/t2                589        0
+omp/dynamic/t3                589        0
+omp/dynamic/t16               589        0
+omp/guided/t1                 589        0
+omp/guided/t2                 589        0
+omp/guided/t3                 589        0
+omp/guided/t16                589        0
+omp_simd/static/t1            589        0
+omp_simd/static/t2            589        0
+omp_simd/static/t3            589        0
+omp_simd/static/t16           589        0
+omp_simd/dynamic/t1           589        0
+omp_simd/dynamic/t2           589        0
+omp_simd/dynamic/t3           589        0
+omp_simd/dynamic/t16          589        0
+omp_simd/guided/t1            589        0
+omp_simd/guided/t2            589        0
+omp_simd/guided/t3            589        0
+omp_simd/guided/t16           589        0
+omp_blocked/static/t1         589        0
+omp_blocked/static/t2         589        0
+omp_blocked/static/t3         589        0
+omp_blocked/static/t16        589        0
+omp_blocked/dynamic/t1        589        0
+omp_blocked/dynamic/t2        589        0
+omp_blocked/dynamic/t3        589        0
+omp_blocked/dynamic/t16       589        0
+omp_blocked/guided/t1         589        0
+omp_blocked/guided/t2         589        0
+omp_blocked/guided/t3         589        0
+omp_blocked/guided/t16        589        0
+omp_tiled/static/t1           589        0
+omp_tiled/static/t2           589        0
+omp_tiled/static/t3           589        0
+omp_tiled/static/t16          589        0
+omp_tiled/dynamic/t1          589        0
+omp_tiled/dynamic/t2          589        0
+omp_tiled/dynamic/t3          589        0
+omp_tiled/dynamic/t16         589        0
+omp_tiled/guided/t1           589        0
+omp_tiled/guided/t2           589        0
+omp_tiled/guided/t3           589        0
+omp_tiled/guided/t16          589        0
+auto                          589        0
+auto/cpu                      589        0
+
+ALL PASSED
+external check skipped (VALIDATE=0)
+implementations: seq omp omp_simd omp_blocked omp_tiled
+results -> results/cpu-129693/bench
+== omp
+  --impl seq --size 64 --K 3 --iters 200 t=1                     0.0439 ms
+  --impl omp --size 64 --K 3 --iters 200 t=1 static              0.0443 ms
+  --impl omp --size 64 --K 3 --iters 200 t=2 static              0.0227 ms
+  --impl omp --size 64 --K 3 --iters 200 t=4 static              0.0119 ms
+  --impl omp --size 64 --K 3 --iters 200 t=8 static              0.0082 ms
+  --impl omp --size 64 --K 3 --iters 200 t=16 static             0.0087 ms
+  --impl omp --size 64 --K 3 --iters 200 t=1 dynamic             0.0447 ms
+  --impl omp --size 64 --K 3 --iters 200 t=2 dynamic             0.0245 ms
+  --impl omp --size 64 --K 3 --iters 200 t=4 dynamic             0.0129 ms
+  --impl omp --size 64 --K 3 --iters 200 t=8 dynamic             0.0122 ms
+  --impl omp --size 64 --K 3 --iters 200 t=16 dynamic            0.0122 ms
+  --impl omp --size 64 --K 3 --iters 200 t=1 guided              0.0445 ms
+  --impl omp --size 64 --K 3 --iters 200 t=2 guided              0.0229 ms
+  --impl omp --size 64 --K 3 --iters 200 t=4 guided              0.0122 ms
+  --impl omp --size 64 --K 3 --iters 200 t=8 guided              0.0103 ms
+  --impl omp --size 64 --K 3 --iters 200 t=16 guided             0.0118 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=1 static         0.0050 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=2 static         0.0034 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=4 static         0.0022 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=8 static         0.0034 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=16 static        0.0037 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=1 dynamic        0.0054 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=2 dynamic        0.0084 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=4 dynamic        0.0059 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=8 dynamic        0.0080 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=16 dynamic       0.0073 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=1 guided         0.0050 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=2 guided         0.0034 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=4 guided         0.0028 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=8 guided         0.0050 ms
+  --impl omp_simd --size 64 --K 3 --iters 200 t=16 guided        0.0073 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=1 static      0.0245 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=2 static      0.0129 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=4 static      0.0070 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=8 static      0.0058 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=16 static     0.0064 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=1 dynamic     0.0251 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=2 dynamic     0.0150 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=4 dynamic     0.0079 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=8 dynamic     0.0087 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=16 dynamic     0.0091 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=1 guided      0.0246 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=2 guided      0.0130 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=4 guided      0.0073 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=8 guided      0.0078 ms
+  --impl omp_blocked --size 64 --K 3 --iters 200 t=16 guided     0.0086 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=1 static        0.0127 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=2 static        0.0070 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=4 static        0.0040 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=8 static        0.0044 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=16 static       0.0052 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=1 dynamic       0.0129 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=2 dynamic       0.0073 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=4 dynamic       0.0043 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=8 dynamic       0.0055 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=16 dynamic      0.0062 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=1 guided        0.0127 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=2 guided        0.0072 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=4 guided        0.0043 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=8 guided        0.0056 ms
+  --impl omp_tiled --size 64 --K 3 --iters 200 t=16 guided       0.0066 ms
+  --impl seq --size 64 --K 7 --iters 200 t=1                     0.1314 ms
+  --impl omp --size 64 --K 7 --iters 200 t=1 static              0.1353 ms
+  --impl omp --size 64 --K 7 --iters 200 t=2 static              0.0682 ms
+  --impl omp --size 64 --K 7 --iters 200 t=4 static              0.0354 ms
+  --impl omp --size 64 --K 7 --iters 200 t=8 static              0.0201 ms
+  --impl omp --size 64 --K 7 --iters 200 t=16 static             0.0176 ms
+  --impl omp --size 64 --K 7 --iters 200 t=1 dynamic             0.1355 ms
+  --impl omp --size 64 --K 7 --iters 200 t=2 dynamic             0.0792 ms
+  --impl omp --size 64 --K 7 --iters 200 t=4 dynamic             0.0357 ms
+  --impl omp --size 64 --K 7 --iters 200 t=8 dynamic             0.0247 ms
+  --impl omp --size 64 --K 7 --iters 200 t=16 dynamic            0.0208 ms
+  --impl omp --size 64 --K 7 --iters 200 t=1 guided              0.1347 ms
+  --impl omp --size 64 --K 7 --iters 200 t=2 guided              0.0666 ms
+  --impl omp --size 64 --K 7 --iters 200 t=4 guided              0.0350 ms
+  --impl omp --size 64 --K 7 --iters 200 t=8 guided              0.0228 ms
+  --impl omp --size 64 --K 7 --iters 200 t=16 guided             0.0205 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=1 static         0.0231 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=2 static         0.0125 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=4 static         0.0067 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=8 static         0.0061 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=16 static        0.0059 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=1 dynamic        0.0236 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=2 dynamic        0.0329 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=4 dynamic        0.0222 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=8 dynamic        0.0197 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=16 dynamic       0.0151 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=1 guided         0.0227 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=2 guided         0.0151 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=4 guided         0.0081 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=8 guided         0.0093 ms
+  --impl omp_simd --size 64 --K 7 --iters 200 t=16 guided        0.0109 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=1 static      0.0749 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=2 static      0.0381 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=4 static      0.0200 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=8 static      0.0124 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=16 static     0.0110 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=1 dynamic     0.0751 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=2 dynamic     0.0398 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=4 dynamic     0.0203 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=8 dynamic     0.0153 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=16 dynamic     0.0137 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=1 guided      0.0748 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=2 guided      0.0383 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=4 guided      0.0199 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=8 guided      0.0146 ms
+  --impl omp_blocked --size 64 --K 7 --iters 200 t=16 guided     0.0134 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=1 static        0.0362 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=2 static        0.0187 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=4 static        0.0100 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=8 static        0.0075 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=16 static       0.0074 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=1 dynamic       0.0365 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=2 dynamic       0.0191 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=4 dynamic       0.0107 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=8 dynamic       0.0089 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=16 dynamic      0.0089 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=1 guided        0.0364 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=2 guided        0.0188 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=4 guided        0.0102 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=8 guided        0.0090 ms
+  --impl omp_tiled --size 64 --K 7 --iters 200 t=16 guided       0.0093 ms
+  --impl seq --size 512 --K 3 --iters 50 t=1                     2.8234 ms
+  --impl omp --size 512 --K 3 --iters 50 t=1 static              2.8408 ms
+  --impl omp --size 512 --K 3 --iters 50 t=2 static              1.4244 ms
+  --impl omp --size 512 --K 3 --iters 50 t=4 static              0.7246 ms
+  --impl omp --size 512 --K 3 --iters 50 t=8 static              0.3630 ms
+  --impl omp --size 512 --K 3 --iters 50 t=16 static             0.3689 ms
+  --impl omp --size 512 --K 3 --iters 50 t=1 dynamic             2.8608 ms
+  --impl omp --size 512 --K 3 --iters 50 t=2 dynamic             1.4483 ms
+  --impl omp --size 512 --K 3 --iters 50 t=4 dynamic             0.7276 ms
+  --impl omp --size 512 --K 3 --iters 50 t=8 dynamic             0.4678 ms
+  --impl omp --size 512 --K 3 --iters 50 t=16 dynamic            0.4117 ms
+  --impl omp --size 512 --K 3 --iters 50 t=1 guided              2.8239 ms
+  --impl omp --size 512 --K 3 --iters 50 t=2 guided              1.4163 ms
+  --impl omp --size 512 --K 3 --iters 50 t=4 guided              0.7198 ms
+  --impl omp --size 512 --K 3 --iters 50 t=8 guided              0.3721 ms
+  --impl omp --size 512 --K 3 --iters 50 t=16 guided             0.3954 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=1 static         0.1490 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=2 static         0.0750 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=4 static         0.0375 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=8 static         0.0221 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=16 static        0.0218 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=1 dynamic        0.1517 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=2 dynamic        0.1576 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=4 dynamic        0.0888 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=8 dynamic        0.0780 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=16 dynamic       0.0590 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=1 guided         0.1481 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=2 guided         0.0752 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=4 guided         0.0396 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=8 guided         0.0282 ms
+  --impl omp_simd --size 512 --K 3 --iters 50 t=16 guided        0.0293 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=1 static      0.3483 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=2 static      0.1727 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=4 static      0.0874 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=8 static      0.0462 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=16 static     0.0450 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=1 dynamic     0.3536 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=2 dynamic     0.2149 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=4 dynamic     0.1153 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=8 dynamic     0.1032 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=16 dynamic     0.0751 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=1 guided      0.3479 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=2 guided      0.1743 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=4 guided      0.0883 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=8 guided      0.0526 ms
+  --impl omp_blocked --size 512 --K 3 --iters 50 t=16 guided     0.0508 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=1 static        0.2105 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=2 static        0.1051 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=4 static        0.0531 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=8 static        0.0297 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=16 static       0.0289 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=1 dynamic       0.2130 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=2 dynamic       0.1138 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=4 dynamic       0.0595 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=8 dynamic       0.0507 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=16 dynamic      0.0427 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=1 guided        0.2104 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=2 guided        0.1062 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=4 guided        0.0547 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=8 guided        0.0371 ms
+  --impl omp_tiled --size 512 --K 3 --iters 50 t=16 guided       0.0353 ms
+  --impl seq --size 512 --K 7 --iters 50 t=1                     8.6507 ms
+  --impl omp --size 512 --K 7 --iters 50 t=1 static              8.8530 ms
+  --impl omp --size 512 --K 7 --iters 50 t=2 static              4.5435 ms
+  --impl omp --size 512 --K 7 --iters 50 t=4 static              2.2277 ms
+  --impl omp --size 512 --K 7 --iters 50 t=8 static              1.1608 ms
+  --impl omp --size 512 --K 7 --iters 50 t=16 static             1.0103 ms
+  --impl omp --size 512 --K 7 --iters 50 t=1 dynamic             8.8650 ms
+  --impl omp --size 512 --K 7 --iters 50 t=2 dynamic             4.4825 ms
+  --impl omp --size 512 --K 7 --iters 50 t=4 dynamic             2.2503 ms
+  --impl omp --size 512 --K 7 --iters 50 t=8 dynamic             1.2296 ms
+  --impl omp --size 512 --K 7 --iters 50 t=16 dynamic            1.0165 ms
+  --impl omp --size 512 --K 7 --iters 50 t=1 guided              8.8731 ms
+  --impl omp --size 512 --K 7 --iters 50 t=2 guided              4.4875 ms
+  --impl omp --size 512 --K 7 --iters 50 t=4 guided              2.2422 ms
+  --impl omp --size 512 --K 7 --iters 50 t=8 guided              1.2011 ms
+  --impl omp --size 512 --K 7 --iters 50 t=16 guided             0.9519 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=1 static         0.7436 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=2 static         0.3713 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=4 static         0.1870 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=8 static         0.0963 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=16 static        0.0952 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=1 dynamic        0.7498 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=2 dynamic        0.6741 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=4 dynamic        0.3569 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=8 dynamic        0.3027 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=16 dynamic       0.2466 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=1 guided         0.7479 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=2 guided         0.3732 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=4 guided         0.1890 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=8 guided         0.1060 ms
+  --impl omp_simd --size 512 --K 7 --iters 50 t=16 guided        0.1085 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=1 static      1.4428 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=2 static      0.7260 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=4 static      0.3640 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=8 static      0.1850 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=16 static     0.1415 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=1 dynamic     1.4410 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=2 dynamic     0.7419 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=4 dynamic     0.3754 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=8 dynamic     0.2392 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=16 dynamic     0.1686 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=1 guided      1.4298 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=2 guided      0.7259 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=4 guided      0.3600 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=8 guided      0.1888 ms
+  --impl omp_blocked --size 512 --K 7 --iters 50 t=16 guided     0.1415 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=1 static        0.6603 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=2 static        0.3283 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=4 static        0.1651 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=8 static        0.0872 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=16 static       0.0802 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=1 dynamic       0.6644 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=2 dynamic       0.3342 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=4 dynamic       0.1720 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=8 dynamic       0.1084 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=16 dynamic      0.0934 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=1 guided        0.6613 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=2 guided        0.3312 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=4 guided        0.1682 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=8 guided        0.0957 ms
+  --impl omp_tiled --size 512 --K 7 --iters 50 t=16 guided       0.0875 ms
+  --impl seq --size 2048 --K 3 --iters 10 t=1                   45.4414 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=1 static            45.3527 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=2 static            22.8011 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=4 static            11.3311 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=8 static             5.9196 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=16 static            5.9098 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=1 dynamic           45.2837 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=2 dynamic           22.8483 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=4 dynamic           11.4328 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=8 dynamic            6.5263 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=16 dynamic           6.3680 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=1 guided            45.2744 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=2 guided            22.6265 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=4 guided            11.3157 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=8 guided             6.1273 ms
+  --impl omp --size 2048 --K 3 --iters 10 t=16 guided            6.2205 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=1 static        2.7282 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=2 static        1.2740 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=4 static        0.6889 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=8 static        0.3042 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=16 static       0.3339 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=1 dynamic       2.7178 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=2 dynamic       1.7237 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=4 dynamic       0.9517 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=8 dynamic       0.6909 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=16 dynamic      0.6502 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=1 guided        2.6997 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=2 guided        1.2339 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=4 guided        0.6403 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=8 guided        0.3377 ms
+  --impl omp_simd --size 2048 --K 3 --iters 10 t=16 guided       0.3895 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=1 static     3.6114 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=2 static     1.8262 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=4 static     0.9207 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=8 static     0.4561 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=16 static     0.4181 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=1 dynamic     3.6452 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=2 dynamic     2.0159 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=4 dynamic     1.0118 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=8 dynamic     0.7748 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=16 dynamic     0.5868 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=1 guided     3.6141 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=2 guided     1.8146 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=4 guided     0.9016 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=8 guided     0.4752 ms
+  --impl omp_blocked --size 2048 --K 3 --iters 10 t=16 guided     0.4302 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=1 static       3.0480 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=2 static       1.5138 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=4 static       0.7659 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=8 static       0.3832 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=16 static      0.3318 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=1 dynamic      3.0811 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=2 dynamic      1.6577 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=4 dynamic      0.8345 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=8 dynamic      0.6124 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=16 dynamic     0.8732 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=1 guided       3.0771 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=2 guided       1.5141 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=4 guided       0.7693 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=8 guided       0.4016 ms
+  --impl omp_tiled --size 2048 --K 3 --iters 10 t=16 guided      0.3776 ms
+  --impl seq --size 2048 --K 7 --iters 10 t=1                  140.6996 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=1 static           144.1386 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=2 static            71.9990 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=4 static            35.9639 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=8 static            18.6648 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=16 static           16.5824 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=1 dynamic          143.5093 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=2 dynamic           72.7654 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=4 dynamic           36.0906 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=8 dynamic           19.3302 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=16 dynamic          16.5205 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=1 guided           143.5111 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=2 guided            71.6871 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=4 guided            36.1270 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=8 guided            18.3272 ms
+  --impl omp --size 2048 --K 7 --iters 10 t=16 guided           15.6415 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=1 static       11.9738 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=2 static        5.9969 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=4 static        3.0046 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=8 static        1.7242 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=16 static       2.0007 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=1 dynamic      11.8605 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=2 dynamic       7.1650 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=4 dynamic       3.7748 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=8 dynamic       3.1475 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=16 dynamic      2.9697 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=1 guided       11.9470 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=2 guided        5.9776 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=4 guided        3.0081 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=8 guided        1.5733 ms
+  --impl omp_simd --size 2048 --K 7 --iters 10 t=16 guided       1.7541 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=1 static    17.4732 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=2 static     8.6281 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=4 static     4.3105 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=8 static     2.4398 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=16 static     1.6882 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=1 dynamic    17.1977 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=2 dynamic     8.7034 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=4 dynamic     4.5180 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=8 dynamic     2.5548 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=16 dynamic     1.9181 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=1 guided    17.1104 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=2 guided     8.6041 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=4 guided     4.3206 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=8 guided     2.2640 ms
+  --impl omp_blocked --size 2048 --K 7 --iters 10 t=16 guided     1.6775 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=1 static       7.8253 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=2 static       3.8752 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=4 static       2.3095 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=8 static       1.0485 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=16 static      0.9317 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=1 dynamic      7.8385 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=2 dynamic      4.0286 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=4 dynamic      2.0465 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=8 dynamic      1.3145 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=16 dynamic     1.2627 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=1 guided       7.7936 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=2 guided       3.9101 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=4 guided       2.1740 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=8 guided       1.0947 ms
+  --impl omp_tiled --size 2048 --K 7 --iters 10 t=16 guided      0.9815 ms
+   (56 s)
+done: 366 ok, 0 check failures, 0 errors, 0 unsupported configurations skipped -> results/cpu-129693/bench
+Traceback (most recent call last):
+  File "/srv/home/ravisankar2/conv-final/scripts/plot_vec.py", line 25, in <module>
+    import pandas as pd
+ModuleNotFoundError: No module named 'pandas'
+plotting skipped; run scripts/plot_vec.py results/cpu-129693/vec elsewhere
+Traceback (most recent call last):
+  File "/srv/home/ravisankar2/conv-final/scripts/plot.py", line 39, in <module>
+    import pandas as pd  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'pandas'
+plotting skipped; run scripts/plot.py results/cpu-129693/bench elsewhere
+done -> results/cpu-129693
