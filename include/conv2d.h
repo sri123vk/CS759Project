@@ -30,6 +30,11 @@ void conv2d_omp_simd(const float* in, float* out, const float* k,
 void conv2d_omp_blocked(const float* in, float* out, const float* k,
                         int C, int H, int W, int K);
 
+// Tiles of 4 output rows x 16 columns, with the tile's running sums kept in
+// registers across all channels and filter taps.
+void conv2d_omp_tiled(const float* in, float* out, const float* k,
+                      int C, int H, int W, int K);
+
 //optimized version for the large size matrices
 //image rectangle shape handled
 //zero-padding,kernel square matrix with odd size

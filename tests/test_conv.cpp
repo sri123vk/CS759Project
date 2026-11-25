@@ -11,6 +11,7 @@
 //   omp/<schedule>/t<threads>             when built with -DCONV_HAVE_OMP
 //   omp_simd/<schedule>/t<threads>        when built with -DCONV_HAVE_OMP_SIMD
 //   omp_blocked/<schedule>/t<threads>     when built with -DCONV_HAVE_OMP_BLOCKED
+//   omp_tiled/<schedule>/t<threads>       when built with -DCONV_HAVE_OMP_TILED
 //   cuda/<bx>x<by>                        when built with -DCONV_HAVE_CUDA
 //   cuda_opt, cuda_const, cuda_tiled_const, cuda_multiout and the multiout
 //   combinations /<bx>x<by>
@@ -36,7 +37,8 @@
 #include "conv2d.h"
 #include "utils.h"
 
-#if defined(CONV_HAVE_OMP) || defined(CONV_HAVE_OMP_SIMD) || defined(CONV_HAVE_OMP_BLOCKED)
+#if defined(CONV_HAVE_OMP) || defined(CONV_HAVE_OMP_SIMD) || defined(CONV_HAVE_OMP_BLOCKED) || \
+    defined(CONV_HAVE_OMP_TILED)
 #define CONV_HAVE_ANY_OMP
 #include <omp.h>
 #endif
@@ -80,8 +82,8 @@ std::vector<Impl> all_impls() {
     // In every version each pixel is summed by one thread in seq's order, so
     // the result must be identical to seq, not merely close. The exception:
     // when FMA instructions are enabled (e.g. -march=native), GCC fuses the
-    // vectorized loops of omp_simd and omp_blocked differently from seq's
-    // loop, so those two then only have to meet the error bound.
+    // vectorized loops of omp_simd, omp_blocked and omp_tiled differently
+    // from seq's loop, so those then only have to meet the error bound.
 #ifdef __FMA__
     const bool vector_bitwise = false;
 #else
@@ -96,6 +98,9 @@ std::vector<Impl> all_impls() {
 #endif
 #ifdef CONV_HAVE_OMP_BLOCKED
         {"omp_blocked", conv2d_omp_blocked, vector_bitwise},
+#endif
+#ifdef CONV_HAVE_OMP_TILED
+        {"omp_tiled", conv2d_omp_tiled, vector_bitwise},
 #endif
     };
     (void)vector_bitwise;  // unused when only conv2d_omp is built

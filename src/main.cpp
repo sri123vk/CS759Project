@@ -53,7 +53,7 @@ struct Args {
 void usage(const char* prog) {
     std::fprintf(stderr,
         "usage: %s --impl NAME --size N [--H h --W w] [--K k] [--C c]\n"
-        "          CPU:  seq omp omp_simd omp_blocked\n"
+        "          CPU:  seq omp omp_simd omp_blocked omp_tiled\n"
         "          CUDA: cuda cuda_opt cuda_const cuda_tiled_const cuda_multiout\n"
         "                cuda_multiout_const cuda_multiout_tiled cuda_multiout_tiled_const\n"
         "          --C c: input channels, summed into one output (all implementations)\n"
@@ -123,6 +123,9 @@ ConvFn pick_cpu(const std::string& impl) {
 #endif
 #ifdef CONV_HAVE_OMP_BLOCKED
     if (impl == "omp_blocked") return conv2d_omp_blocked;
+#endif
+#ifdef CONV_HAVE_OMP_TILED
+    if (impl == "omp_tiled") return conv2d_omp_tiled;
 #endif
     std::fprintf(stderr, "unknown impl: %s\n", impl.c_str());
     std::exit(1);
