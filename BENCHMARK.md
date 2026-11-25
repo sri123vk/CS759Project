@@ -169,6 +169,35 @@ python3 scripts/plot_vec.py results/vec-final   # -> plots/vec-final/fig_vec_spe
 - Run it on the same cluster node type as the other experiments, inside a
   job (`srun`/`sbatch`), not on the login node.
 
+## omp_tiled loop order with many channels
+
+`omp_tiled` can take the channels in two orders, and both give bit-identical
+results (each pixel is still summed channel, filter row, filter column):
+all channels for one 4×16 tile before the next tile, with the sums in
+registers, or one channel across a whole strip of 4 rows before the next,
+with the sums kept in the output in between. The first jumps between C
+planes H·W floats apart every 16 columns; the second walks along the same
+K + 3 rows of one plane. An A/B run on Euler (job 129695, 16 threads,
+`results/omp-tiled-order-129695/ab.txt`):
+
+| workload | all channels per tile | one channel per pass | omp_simd |
+|---|---|---|---|
+| 2048², K = 3/5/7, C = 1 | same | same | |
+| 1024², K = 5, C = 16 | 3.52 ms | 2.75 ms | 3.54 ms |
+| 1024², K = 5, C = 64 | 18.2 ms | 11.7 ms | 16.2 ms |
+| 1024², K = 7, C = 16 | 5.72 ms | 4.73 ms | 7.27 ms |
+| 1024², K = 7, C = 64 | 29.8 ms | 19.8 ms | 30.5 ms |
+| 1024², K = 3, C = 8 | 0.62 ms | 0.82 ms | 0.60 ms |
+| 512², K = 5, C = 64 | 4.60 ms | 4.34 ms | 3.65 ms |
+| 512², K = 7, C = 32 | 2.77 ms | 3.03 ms | 3.43 ms |
+| 256², K = 5, C = 32 | 0.52 ms | 0.55 ms | 0.42 ms |
+
+One channel per pass wins once each plane is too large to keep several in
+cache and the filter gives each tile enough work (K ≥ 5); for K = 3 and
+small images the extra trips through the output cost more. `omp_tiled`
+therefore uses one channel per pass when C > 1, K ≥ 5 and H·W ≥ 512K
+pixels, and all channels per tile otherwise.
+
 ## Not covered yet
 
 These need support in the driver first. Once it's there, they're one more

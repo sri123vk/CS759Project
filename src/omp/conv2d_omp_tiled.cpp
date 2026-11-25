@@ -9,10 +9,13 @@
 //    other, so the CPU can overlap their additions instead of waiting on one
 //    chain of dependent adds per vector register.
 //
-// The running sums of a tile are carried across all C input channels. Each
-// pixel adds its taps in the same order as conv2d_seq (channel, then filter
-// row, then filter column, starting from zero), so the output matches it bit
-// for bit when the compiler does not contract the multiply-adds into FMAs.
+// With C input channels the tile's sums are either carried across all
+// channels in registers, or, for large planes, a strip is swept once per
+// channel with the sums kept in the output in between (see conv2d_omp_tiled
+// for when). Either way each pixel adds its taps in the same order as
+// conv2d_seq (channel, then filter row, then filter column, starting from
+// zero), so the output matches it bit for bit when the compiler does not
+// contract the multiply-adds into FMAs.
 
 #include "conv2d.h"
 #include <omp.h>
@@ -126,6 +129,22 @@ void conv2d_omp_tiled(const float* in, float* out, const float* k,
     const std::size_t slice = (std::size_t)K * K;
     const int strips = (H + TILE_ROWS - 1) / TILE_ROWS;
 
+    // Channels per pass over a strip (see the loop below).
+    //  chunk = C: every channel for one tile, then the next tile. The sums
+    //    stay in registers for the whole tile; best when the C planes are
+    //    small enough to stay in cache together.
+    //  chunk = 1: one channel across the whole strip, then the next. A
+    //    channel's tiles walk along the same K + 3 input rows in order, but
+    //    the sums go through `out` between channels. Best once each plane is
+    //    large: with chunk = C every 16 columns jump between C planes that
+    //    are H*W floats apart, which thrashes the cache.
+    // Measured on Euler (16 threads, see the omp_tiled loop-order note in
+    // BENCHMARK.md): chunk = 1 is up to 1.55x faster at 1024x1024 with
+    // K >= 5 and C >= 16, but slower for K = 3 and for images of 512x512 or
+    // less, where the extra trips through `out` cost more than they save.
+    const bool by_channel = C > 1 && K >= 5 && plane >= (std::size_t(1) << 19);
+    const int chunk = by_channel ? 1 : C;
+
     #pragma omp parallel for schedule(runtime)
     for (int s = 0; s < strips; ++s) {
         const int r0 = s * TILE_ROWS;                  // first output row of the strip
@@ -134,22 +153,42 @@ void conv2d_omp_tiled(const float* in, float* out, const float* k,
 
         // Full tiles, only over the interior columns [R, W - R), where every
         // filter column lands inside the image (as in conv2d_omp_blocked).
-        int c0 = R;
-        for (; c0 + TILE_COLS <= W - R; c0 += TILE_COLS) {
-            float acc[TILE_ROWS][TILE_COLS] = {};  // carried across all channels
-            for (int ch = 0; ch < C; ++ch) {
-                const float* in_ch = in + ch * plane;
-                const float* k_ch = k + ch * slice;
-                if (interior) tile_interior(in_ch, k_ch, W, K, r0, c0, acc);
-                else          tile_edge(in_ch, k_ch, H, W, K, r0, rows, c0, acc);
-            }
-            for (int q = 0; q < rows; ++q) {
-                #pragma omp simd
-                for (int b = 0; b < TILE_COLS; ++b) {
-                    out[(r0 + q) * W + c0 + b] = acc[q][b];  // each sum stored once
+        // c_end is where they stop; the columns after it are leftovers.
+        const int full = W - 2 * R >= TILE_COLS ? (W - 2 * R) / TILE_COLS : 0;
+        const int c_end = R + full * TILE_COLS;
+
+        // The channels are taken `chunk` at a time: each pass sweeps the
+        // strip's tiles for those channels, and the partial sums wait in
+        // `out` between passes. Reading them back continues the same chain of
+        // float additions, so each pixel is still summed in seq's order
+        // (channel, filter row, filter column) whatever the chunk.
+        for (int ch0 = 0; ch0 < C; ch0 += chunk) {
+            const int ch1 = std::min(C, ch0 + chunk);
+            for (int c0 = R; c0 < c_end; c0 += TILE_COLS) {
+                float acc[TILE_ROWS][TILE_COLS] = {};
+                if (ch0 > 0) {
+                    for (int q = 0; q < rows; ++q) {
+                        #pragma omp simd
+                        for (int b = 0; b < TILE_COLS; ++b) {
+                            acc[q][b] = out[(r0 + q) * W + c0 + b];
+                        }
+                    }
+                }
+                for (int ch = ch0; ch < ch1; ++ch) {
+                    const float* in_ch = in + ch * plane;
+                    const float* k_ch = k + ch * slice;
+                    if (interior) tile_interior(in_ch, k_ch, W, K, r0, c0, acc);
+                    else          tile_edge(in_ch, k_ch, H, W, K, r0, rows, c0, acc);
+                }
+                for (int q = 0; q < rows; ++q) {
+                    #pragma omp simd
+                    for (int b = 0; b < TILE_COLS; ++b) {
+                        out[(r0 + q) * W + c0 + b] = acc[q][b];
+                    }
                 }
             }
         }
+        const int c0 = c_end;
 
         // Leftover columns, one pixel at a time: the left edge [0, R), then
         // everything after the last full tile. min/max keep this right when

@@ -1,0 +1,61 @@
+# omp_tiled loop order A/B, Euler job 129695 (euler01, 16 threads, OMP_PROC_BIND=close, static)
+# old = all channels per tile (chunk = C); new = one channel per pass over a strip (chunk = 1)
+# two repeats each; median of 10 timed calls after 2 warm-up; pass = --check against seq
+built old
+built new
+ver    size  K   C    median_ms pass
+old    2048  3   1     0.3404 1
+new    2048  3   1     0.3353 1
+old    2048  3   1     0.3295 1
+new    2048  3   1     0.3375 1
+simd   2048  3   1       0.3360
+old    2048  5   1     0.5499 1
+new    2048  5   1     0.5531 1
+old    2048  5   1     0.5705 1
+new    2048  5   1     0.5271 1
+simd   2048  5   1       0.9066
+old    2048  7   1     0.9500 1
+new    2048  7   1     0.9928 1
+old    2048  7   1     0.9567 1
+new    2048  7   1     0.8931 1
+simd   2048  7   1       1.8474
+old    1024  3   8     0.6235 1
+new    1024  3   8     0.8179 1
+old    1024  3   8     0.6260 1
+new    1024  3   8     0.8246 1
+simd   1024  3   8       0.5994
+old    1024  5   16    3.5497 1
+new    1024  5   16    2.7378 1
+old    1024  5   16    3.4877 1
+new    1024  5   16    2.7722 1
+simd   1024  5   16      3.5376
+old    1024  5   64   18.3545 1
+new    1024  5   64   11.5115 1
+old    1024  5   64   18.1188 1
+new    1024  5   64   11.8994 1
+simd   1024  5   64     16.2108
+old    1024  7   16    5.6967 1
+new    1024  7   16    4.6751 1
+old    1024  7   16    5.7333 1
+new    1024  7   16    4.7834 1
+simd   1024  7   16      7.2680
+old    1024  7   64   29.5330 1
+new    1024  7   64   20.3521 1
+old    1024  7   64   30.1656 1
+new    1024  7   64   19.1699 1
+simd   1024  7   64     30.4816
+old    512   5   64    4.6196 1
+new    512   5   64    4.2659 1
+old    512   5   64    4.5739 1
+new    512   5   64    4.4067 1
+simd   512   5   64      3.6458
+old    512   7   32    2.8913 1
+new    512   7   32    3.0079 1
+old    512   7   32    2.6497 1
+new    512   7   32    3.0490 1
+simd   512   7   32      3.4336
+old    256   5   32    0.5332 1
+new    256   5   32    0.5520 1
+old    256   5   32    0.5088 1
+new    256   5   32    0.5475 1
+simd   256   5   32      0.4232
