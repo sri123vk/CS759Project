@@ -10,7 +10,16 @@ tables for the final report. They drive the existing benchmark driver
 | `scripts/bench_torch.py` | PyTorch / cuDNN reference on the same problems, same CSV format |
 | `scripts/plot.py` | figures (PNG) and `summary.md` tables for the report |
 | `scripts/sysinfo.sh` | hardware, compiler and git info, saved with every run |
-| `scripts/euler.slurm` | build, test, benchmark and plot on one cluster node |
+| `scripts/euler.slurm` | build, `make test`, benchmark and plot on one cluster node |
+| `scripts/euler_omp.slurm` | OpenMP-only rerun: CPU-only build, `test_conv --impl omp`, `make validate` for the OpenMP versions if SciPy/PyTorch is available, `bench.sh baseline omp channels` with `IMPLS="omp omp_simd omp_blocked"`, then merges into an earlier run (default `euler-127842`) and plots |
+| `scripts/merge_results.py` | replaces the `omp*` rows (or other `--impl` prefixes) of one run with those of a rerun |
+| `scripts/cuda_variants.slurm` | tests every OpenMP version and CUDA implementation (`/t1` and `/7x3` only), then runs `baseline omp cuda_blocks` at 256²–2048², K = 3, 5, 7, 11, 5 block shapes, `BLOCK=auto` |
+| `scripts/plot_cuda_blocks.py` | PDF and CSV comparing the CUDA implementations on `kernel_ms` or `median_ms` |
+| `scripts/vec_study.sh`, `scripts/plot_vec.py` | compiler vectorization study (see below) |
+| `scripts/test_both.slurm` | earlier job: tests `cuda` and `cuda_opt` at 32×8, validates them on 33×65 against SciPy, then runs every `bench.sh` experiment |
+| `scripts/profile_torch_conv.slurm` | `nsys` trace of one PyTorch `conv2d` (1024², K = 3) to see which cuDNN kernels and launch shapes it uses |
+| `scripts/bench_old.sh` | earlier version of `bench.sh` without the `channels` / `channel_blocks` experiments or sizes below 256²; superseded |
+| `scripts/conv_test.py` | not a test: prints `cuda` / `cuda_opt` rows at 1024², K = 3 from one old CSV (hard-coded path) |
 
 ## Quick start
 
@@ -79,12 +88,14 @@ Each implementation keeps the same color and marker in every figure.
 ## Adding implementations
 
 The scripts benchmark every name in `IMPLS` that `bin/conv --impl NAME` accepts.
-The default list already includes the names we'd likely use for the
-reviewers' suggested optimizations (`omp_simd`, `omp_blocked`, `cuda_const`,
-`cuda_tiled`, `cuda_tiled_mo`). A name the driver doesn't know yet is just
-skipped. Once a teammate adds a variant to the driver, it shows up in the next
-run with no script changes. For a different name, add it to the default
-`IMPLS` in `bench.sh` or set it for one run:
+The default list holds all 12 implementations (`seq`, `omp`, `omp_simd`,
+`omp_blocked`, `cuda`, `cuda_opt`, `cuda_const`, `cuda_tiled_const`,
+`cuda_multiout`, `cuda_multiout_const`, `cuda_multiout_tiled`,
+`cuda_multiout_tiled_const`; see the README's Implementations section). It
+also lists two placeholder names, `cuda_tiled` and `cuda_tiled_mo`, that no
+implementation uses. A name the driver doesn't accept is skipped, so those
+two never run. For a new name, add it to the default `IMPLS` in `bench.sh`
+or set it for one run:
 
 ```
 IMPLS="seq omp cuda cuda_shared" scripts/bench.sh baseline cuda_blocks
@@ -95,14 +106,34 @@ Naming convention used by the sweeps:
   `OMP_NUM_THREADS` and `OMP_SCHEDULE` from the environment, so the loop must
   use `schedule(runtime)`, as `conv2d.h` specifies for `conv2d_omp`.
 - Names starting with `cuda` run in the block-shape sweep and get `--block BX BY`.
+  `BLOCK=auto` is passed only to the eight known CUDA names; any other
+  `cuda*` name gets 32×8 instead.
 - `seq` is the baseline for every speedup.
+
+## Results in the repository
+
+| Directory | What it is | Use it? |
+|---|---|---|
+| `results/euler-127842+omp-128679/` | `euler-127842` with its `omp*` rows replaced by `euler-128679-omp` (`MERGED.txt`). Plots in `plots/euler-127842+omp-128679/` | **Yes: the run for the report** |
+| `results/euler-127842/` | Full `euler.slurm` run of all six experiments, including `channels` and `channel_blocks`; euler01, 16 CPUs | Only through the merged run |
+| `results/euler-128679-omp/` | `euler_omp.slurm` rerun of the OpenMP versions (`baseline`, `omp`, `channels`); same node and CPU count. Log in `results/slurm-128679.out` | Only through the merged run |
+| `results/euler-127786/` | Earlier run of `baseline`, `omp`, `cuda_blocks` and `torch` only, all at C = 1 (no `channels` / `channel_blocks` CSVs) | No; kept for reference |
+
+In the `euler-128679-omp` rerun, `test_conv --impl omp` passed every check;
+the external SciPy check was skipped because the node's Python had neither
+SciPy nor PyTorch. Every benchmark row in these runs except `seq` was
+compared with `seq` (`--check`). No run's `errors.log` has a check failure
+or driver error, and every row of the merged run's CSVs has `pass = 1`.
 
 ## Methodology
 
 - **Correctness.** Every run except `seq` uses `--check`, which compares against
   `seq` with the FP32 error bound described in the README (`CHECK=0` turns it off).
   A failing row is still recorded. It's logged in `errors.log` and listed in
-  `summary.md`. `euler.slurm` runs `make test` first and stops if it fails.
+  `summary.md`. `euler.slurm` runs `make test` first and stops if it fails;
+  `euler_omp.slurm` runs `test_conv --impl omp` (it stops on a failure too).
+  `bench_torch.py` checks PyTorch's output against a float64 PyTorch result
+  with the same bound.
 - **Repetitions.** 2 warm-up runs, then 200 timed runs up to 128², 50 up to
   512², 20 at 1024², and 10 above. Short runs get more samples because they're noisier. We
   report the median; `ITERS` and `WARMUP` override these counts.

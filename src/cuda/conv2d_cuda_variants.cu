@@ -3,7 +3,7 @@
 //
 // All variants take C input channels (CHW layout, see conv2d.h) and sum them
 // into one output plane, adding channel by channel and, within a channel, in
-// the same row/column order as before. Shared-tile variants load one
+// the same row/column order as conv2d_seq. Shared-tile variants load one
 // channel's tile at a time, so their shared memory does not grow with C.
 // Constant-memory variants hold all C filter slices in the constant symbol,
 // so they need C*K*K <= 4096.
@@ -17,7 +17,10 @@
 // cuda_multiout_tiled_const: two outputs per thread, shared tile and constant filter.
 //
 // Constant-memory symbols are shared by launches in a CUDA context. A mutex
-// protects uploads and launches through this file from concurrent callers.
+// serializes the constant-memory variants from filter upload to completion so
+// concurrent callers cannot overwrite the symbol mid-kernel. The other
+// variants do not take the lock, and the CudaConv buffers and events passed
+// in are not protected.
 
 #include <cuda_runtime.h>
 
@@ -146,7 +149,8 @@ __global__ void conv2d_variant_tiled(
                 }
             }
         } else if (active) {
-            // Skip invalid taps, including 0 * infinity or 0 * NaN at borders.
+            // Skip invalid taps rather than multiplying the tile's padding
+            // zero by the weight (0 * Inf or 0 * NaN would give NaN).
             for (int i = 0; i < K; ++i) {
                 const int y = row + i - radius;
                 const float* tile_row = tile +
@@ -163,9 +167,11 @@ __global__ void conv2d_variant_tiled(
     if (active) output[row * W + col] = sum;
 }
 
-// Each thread computes two horizontally separated output pixels. For each
-// q=0,1, adjacent lanes address adjacent columns (for warp-wide block rows).
-// Each coefficient loaded by a thread can be used by both accumulators.
+// Each thread computes two output pixels in the same row, col0 and
+// col1 = col0 + blockDim.x. For each of col0 and col1, adjacent lanes in the
+// same block row address adjacent columns, so loads coalesce when blockDim.x
+// is a multiple of 32. Each coefficient loaded by a thread is used by both
+// accumulators (sum0 and sum1).
 // This variant does not use shared memory or constant memory.
 __global__ void conv2d_variant_multiout(
     const float* image, float* output, const float* filter,
@@ -226,6 +232,9 @@ __global__ void conv2d_variant_multiout(
 // Compile separate kernels for the requested combinations. Each thread uses
 // one coefficient for two accumulators; this is an independent optimization
 // from shared image tiles and constant-memory filter coefficients.
+// Only <false, true>, <true, false> and <true, true> are instantiated;
+// cuda_multiout uses the separate conv2d_variant_multiout kernel above, not
+// <false, false>, so changes here do not reach cuda_multiout.
 template <bool UseShared, bool UseConstant>
 __global__ void conv2d_variant_multiout_combined(
     const float* image, float* output, const float* filter,
@@ -428,9 +437,10 @@ LaunchConfig get_launch_config(int H, int W, int K, int bx, int by,
         throw std::invalid_argument("grid exceeds the GPU's limits");
     }
 
-    // Match the 32-bit indexing used by the project's existing direct and
-    // shared kernels. Reject inputs whose products or padded coordinates
-    // would overflow instead of silently mis-indexing.
+    // The kernels in this file use 32-bit int indexing, like the direct
+    // baseline in conv2d_cuda.cu. Unlike the baseline, which does not check,
+    // reject inputs whose products or padded coordinates would overflow
+    // instead of silently mis-indexing.
     const auto int_max = static_cast<std::uint64_t>(std::numeric_limits<int>::max());
     if (static_cast<std::uint64_t>(H) * W > int_max ||
         static_cast<std::uint64_t>(K) * K > int_max ||

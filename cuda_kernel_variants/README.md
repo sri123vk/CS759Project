@@ -1,5 +1,27 @@
 # CUDA convolution experiments
 
+> **Historical note.** This guide describes how the first CUDA variants were
+> merged into the project. It is kept for reference; the main
+> [README](../README.md#implementations) describes the current code. Since
+> this was written:
+>
+> - There are eight CUDA implementations, not five: `cuda_multiout_const`,
+>   `cuda_multiout_tiled` and `cuda_multiout_tiled_const` were added (see
+>   [MULTIOUT_README.md](../MULTIOUT_README.md)).
+> - Every implementation takes multi-channel input (`--C`). The
+>   constant-memory variants need `C·K² ≤ 4096` (odd `K ≤ 63` for one channel).
+> - `cuda_opt` no longer falls back to a direct kernel and there is no
+>   `CONV_CUDA_TRACE`. If the tile doesn't fit, it throws and `bin/conv`
+>   exits with status 3.
+> - The CUDA sources live in `src/cuda/` (`src/cuda/conv2d_cuda_variants.cu`).
+>   The `files/` directory mentioned below isn't in the repository; only
+>   `cuda_variants.patch` is, and it no longer applies to the current code.
+> - All variants have since been built and tested on an Euler GPU:
+>   `scripts/euler.slurm` runs `make test CUDA=1` and stops on a failure
+>   before the benchmark run `results/euler-127842/`, which includes all eight.
+>   The "Validation status" section below describes only what had been
+>   checked when this was written.
+
 This package adds three named CUDA implementations to the existing project.
 Together with the project's existing `cuda` and the supplied `cuda_opt`, they
 let you compare five separate variants on the same inputs.
